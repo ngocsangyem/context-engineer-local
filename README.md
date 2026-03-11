@@ -20,8 +20,8 @@ A standalone MCP server that indexes source code directories and exposes retriev
 
 ```bash
 cd mcp-codebase-index
-npm install
-npm run build
+pnpm install
+pnpm build
 node dist/index.js --path /path/to/your/repo
 ```
 
@@ -68,9 +68,22 @@ python3 skills/prompt-enhancer/scripts/enhance-prompt.py "Rename variable" --int
 python3 skills/prompt-enhancer/scripts/enhance-prompt.py "Refactor auth" --intensity deep --budget 8192
 ```
 
-**As a Claude Code Skill:**
+**Setup as a Claude Code Skill:**
 
-Copy or symlink `skills/prompt-enhancer/` into your project's `.claude/skills/` directory. The skill activates automatically when you work on coding tasks.
+1. Copy the skill into your project's `.claude/skills/` directory:
+
+```bash
+cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhancer
+```
+
+2. The skill activates automatically when Claude Code detects coding tasks. You can also invoke it explicitly:
+
+```
+> Use the prompt-enhancer skill to enrich my prompt: "Fix the auth timeout bug"
+> @prompt-enhancer Refactor the payment module for better separation of concerns
+```
+
+3. For best results, make sure the MCP codebase index server is running (see above). Without it, the skill still works but uses Claude's built-in file tools instead of the indexed context.
 
 ## Architecture
 
