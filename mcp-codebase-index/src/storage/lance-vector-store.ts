@@ -138,7 +138,8 @@ export class LanceVectorStore {
     const table = this.ensureReady();
     // Escape single quotes in path
     const escaped = filePath.replace(/'/g, "''");
-    await table.delete(`filePath = '${escaped}'`);
+    // LanceDB SQL parser lowercases unquoted identifiers; double-quote camelCase fields
+    await table.delete(`"filePath" = '${escaped}'`);
   }
 
   /** Return total number of indexed chunks. */
