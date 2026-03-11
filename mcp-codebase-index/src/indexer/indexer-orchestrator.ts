@@ -32,9 +32,9 @@ export interface IndexStats {
   vectorCount: number;
   graphNodes: number;
   graphEdges: number;
+  /** Timestamp (ms epoch) of the most recently indexed file, or null if empty */
+  newestIndexed: number | null;
 }
-
-const DEFAULT_INDEX_SUBDIR = '.index';
 
 export class IndexerOrchestrator {
   private readonly rootPath: string;
@@ -47,10 +47,10 @@ export class IndexerOrchestrator {
 
   constructor(rootPath: string, config: Partial<OrchestratorConfig> = {}) {
     this.rootPath = path.resolve(rootPath);
-    this.indexDir = path.resolve(
-      rootPath,
-      config.indexDir ?? DEFAULT_INDEX_SUBDIR
-    );
+    // indexDir: use provided absolute path, or fall back to <rootPath>/.index/
+    this.indexDir = config.indexDir
+      ? path.resolve(config.indexDir)
+      : path.resolve(rootPath, '.index');
     this.config = {
       rootPath: this.rootPath,
       indexDir: this.indexDir,
@@ -130,6 +130,7 @@ export class IndexerOrchestrator {
       vectorCount,
       graphNodes: graphStats.nodeCount,
       graphEdges: graphStats.edgeCount,
+      newestIndexed: metaStats.newestIndexed,
     };
 
     this.log(
@@ -188,6 +189,7 @@ export class IndexerOrchestrator {
       vectorCount,
       graphNodes: graphStats.nodeCount,
       graphEdges: graphStats.edgeCount,
+      newestIndexed: metaStats.newestIndexed,
     };
   }
 
@@ -199,6 +201,11 @@ export class IndexerOrchestrator {
   /** Expose the internal LanceVectorStore for shared use in retrieval layer. */
   getVectorStore(): LanceVectorStore {
     return this.vectorStore;
+  }
+
+  /** Return the resolved data directory path. */
+  getIndexDir(): string {
+    return this.indexDir;
   }
 
   private log(msg: string): void {

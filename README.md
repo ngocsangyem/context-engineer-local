@@ -49,6 +49,20 @@ node dist/index.js --path /path/to/your/repo
 - `--no-watch` — Disable file watching
 - `--exclude <patterns>` — Comma-separated glob patterns to exclude
 
+**Data Storage:**
+
+Index data persists in `mcp-codebase-index/data/<project-slug>/` (not inside the indexed project). Each project gets a unique slug (`<basename>-<6char-hash>`). On restart, the server detects existing index data and runs incremental indexing only — skipping unchanged files, indexing new/modified, and pruning deleted ones.
+
+```
+mcp-codebase-index/data/
+├── my-app-a1b2c3/        # per-project index
+│   ├── metadata.db       # file hashes, timestamps, chunk counts
+│   └── vectors/           # LanceDB embeddings
+└── other-repo-d4e5f6/
+```
+
+To reset an index: `rm -rf mcp-codebase-index/data/<project-slug>/`
+
 **Performance Targets:**
 
 - Initial index: 10K files in <60s
@@ -138,6 +152,7 @@ TypeScript, JavaScript (JSX/TSX), Python, Go, Rust, Java, Kotlin, Scala, C#, C/C
 ```
 context-engineer-local/
 ├── mcp-codebase-index/          # MCP server
+│   ├── data/                    # Index data (gitignored, persists across restarts)
 │   ├── src/
 │   │   ├── index.ts             # Entry point + CLI
 │   │   ├── server/              # MCP tool registration

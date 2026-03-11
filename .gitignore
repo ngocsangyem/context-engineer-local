@@ -88,3 +88,4 @@ worktrees/
 docs/*
 plans/*
 mcp-codebase-index/node_modules/*
+mcp-codebase-index/data/*

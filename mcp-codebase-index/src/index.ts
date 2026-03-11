@@ -9,7 +9,10 @@
  * IMPORTANT: stdout is reserved for MCP JSON-RPC. All logs go to stderr.
  */
 
+import crypto from 'crypto';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { IndexerOrchestrator } from './indexer/indexer-orchestrator.js';
 import { SemanticSearch } from './retrieval/semantic-search.js';
@@ -18,6 +21,39 @@ import { HybridRetriever } from './retrieval/hybrid-retriever.js';
 import { GitignoreFilter } from './utils/gitignore-filter.js';
 import { FileWatcherService } from './watcher/file-watcher-service.js';
 import { createServer } from './server/mcp-server-setup.js';
+
+// ---------------------------------------------------------------------------
+// Data directory resolution — stores index data in mcp-codebase-index/data/
+// ---------------------------------------------------------------------------
+
+/** Derive a stable per-project slug: basename + 6-char hash of normalized full path */
+function projectSlug(rootPath: string): string {
+  const normalized = path.resolve(rootPath);
+  const base = path.basename(normalized).replace(/[^a-zA-Z0-9_-]/g, '_') || 'root';
+  const hash = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 6);
+  return `${base}-${hash}`;
+}
+
+/** Resolve the MCP server root by walking up from the compiled entry until package.json is found */
+function findMcpRoot(): string {
+  const entryDir = path.dirname(fileURLToPath(import.meta.url));
+  let dir = entryDir;
+  for (let i = 0; i < 5; i++) {
+    try {
+      fs.statSync(path.join(dir, 'package.json'));
+      return dir;
+    } catch {
+      dir = path.dirname(dir);
+    }
+  }
+  // Fallback: assume dist/ → mcp-codebase-index/
+  return path.dirname(entryDir);
+}
+
+/** Resolve the data directory for a given project inside mcp-codebase-index/data/ */
+function resolveDataDir(rootPath: string): string {
+  return path.join(findMcpRoot(), 'data', projectSlug(rootPath));
+}
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -63,14 +99,20 @@ function parseArgs(argv: string[]): CliArgs {
 async function main(): Promise<void> {
   const { rootPath, watch, excludePatterns } = parseArgs(process.argv);
 
+  // Compute data directory inside mcp-codebase-index/data/<project-slug>/
+  const dataDir = resolveDataDir(rootPath);
+
   process.stderr.write(`[mcp-codebase-index] Starting — root: ${rootPath}\n`);
+  process.stderr.write(`[mcp-codebase-index] Data dir: ${dataDir}\n`);
   process.stderr.write(`[mcp-codebase-index] Watch mode: ${watch}\n`);
 
   // 1. Gitignore filter (used by watcher to skip ignored files)
   const gitignoreFilter = new GitignoreFilter(rootPath);
 
   // 2. Orchestrator owns MetadataStore, LanceVectorStore, TagGraphStore internally
+  //    indexDir points to mcp-codebase-index/data/<slug>/ (persists across restarts)
   const orchestrator = new IndexerOrchestrator(rootPath, {
+    indexDir: dataDir,
     excludePatterns,
   });
 

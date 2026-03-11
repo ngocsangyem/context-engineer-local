@@ -159,16 +159,29 @@ export function createServer(deps: ServerDependencies): McpServer {
     }
   );
 
-  // Tool 6: index_status
+  // Tool 6: index_status — enhanced with data path, last-indexed time, staleness
   server.tool(
     'index_status',
-    'Get current indexing statistics and health check.',
+    'Get index statistics, data location, last-indexed time, and whether the index exists. Use this to decide if data is fresh or a re-index is needed.',
     {},
     async () => {
       try {
+        const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
         const stats = await orchestrator.getStats();
+        const dataPath = orchestrator.getIndexDir();
+        const hasIndex = stats.totalFiles > 0;
+        const lastIndexedAt = stats.newestIndexed
+          ? new Date(stats.newestIndexed).toISOString()
+          : 'never';
+        const ageMs = stats.newestIndexed ? Date.now() - stats.newestIndexed : null;
+        const stale = ageMs !== null && ageMs > STALE_THRESHOLD_MS;
+
         const text = [
           'Index Status:',
+          `  Has index    : ${hasIndex ? 'yes' : 'no (empty)'}`,
+          `  Data path    : ${dataPath}`,
+          `  Last indexed : ${lastIndexedAt}`,
+          `  Stale (>1h)  : ${stale ? 'yes' : 'no'}`,
           `  Total files  : ${stats.totalFiles}`,
           `  Indexed files: ${stats.indexedFiles}`,
           `  Total chunks : ${stats.totalChunks}`,
