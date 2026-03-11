@@ -11,6 +11,7 @@ Two components work together to give Claude Code (and other MCP clients) deep co
 A standalone MCP server that indexes source code directories and exposes retrieval tools.
 
 **Features:**
+
 - Three-layer hybrid retrieval: structural (tree-sitter + PageRank), semantic (LanceDB embeddings), keyword (ripgrep)
 - Real-time file watching with incremental re-indexing
 - 6 MCP tools: `search_codebase`, `get_file_summary`, `get_repo_map`, `get_recent_changes`, `get_dependencies`, `index_status`
@@ -32,18 +33,24 @@ node dist/index.js --path /path/to/your/repo
   "mcpServers": {
     "codebase-index": {
       "command": "node",
-      "args": ["/path/to/mcp-codebase-index/dist/index.js", "--path", "."]
+      "args": [
+        "/path/to/mcp-codebase-index/dist/index.js",
+        "--path",
+        "/path/to/your/repo"
+      ]
     }
   }
 }
 ```
 
 **CLI Options:**
+
 - `--path <dir>` — Directory to index (required)
 - `--no-watch` — Disable file watching
 - `--exclude <patterns>` — Comma-separated glob patterns to exclude
 
 **Performance Targets:**
+
 - Initial index: 10K files in <60s
 - Incremental update: <2s
 - Query latency: <200ms
@@ -54,6 +61,7 @@ node dist/index.js --path /path/to/your/repo
 A Claude Code skill that queries the MCP server to automatically enrich user prompts with relevant codebase context.
 
 **Features:**
+
 - Auto-detects task type (coding, debug, review, refactor, research)
 - Intensity levels (light, standard, deep) control scaffolding amount
 - Context-first prompt ordering (per Anthropic best practices)
@@ -107,17 +115,17 @@ TypeScript, JavaScript (JSX/TSX), Python, Go, Rust, Java, Kotlin, Scala, C#, C/C
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| Language (server) | TypeScript (ESM) |
-| AST parsing | web-tree-sitter (WASM) |
-| Embeddings | all-MiniLM-L6-v2 via ONNX |
-| Vector DB | LanceDB (embedded, file-based) |
-| Metadata | SQLite via better-sqlite3 |
-| File watching | @parcel/watcher |
-| Keyword search | ripgrep subprocess |
-| MCP transport | Stdio |
-| Skill scripts | Python 3 (stdlib only) |
+| Component         | Technology                     |
+| ----------------- | ------------------------------ |
+| Language (server) | TypeScript (ESM)               |
+| AST parsing       | web-tree-sitter (WASM)         |
+| Embeddings        | all-MiniLM-L6-v2 via ONNX      |
+| Vector DB         | LanceDB (embedded, file-based) |
+| Metadata          | SQLite via better-sqlite3      |
+| File watching     | @parcel/watcher                |
+| Keyword search    | ripgrep subprocess             |
+| MCP transport     | Stdio                          |
+| Skill scripts     | Python 3 (stdlib only)         |
 
 ## Requirements
 
