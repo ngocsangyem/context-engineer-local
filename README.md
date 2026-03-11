@@ -101,6 +101,10 @@ cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhance
 └─────────────────────────────────────────────────┘
 ```
 
+## Supported Languages
+
+TypeScript, JavaScript (JSX/TSX), Python, Go, Rust, Java, Kotlin, Scala, C#, C/C++, Ruby, PHP, Swift, Dart, Elixir, Lua, Vue, Svelte, HTML, CSS/SCSS, SQL, Bash/Shell, YAML, TOML
+
 ## Tech Stack
 
 | Component | Technology |

@@ -5,16 +5,19 @@
 
 // Map of file extension (without dot) to tree-sitter language identifier
 const EXTENSION_TO_LANGUAGE: Record<string, string> = {
+  // JavaScript / TypeScript
   ts: 'typescript',
   tsx: 'tsx',
   js: 'javascript',
   jsx: 'jsx',
   mjs: 'javascript',
   cjs: 'javascript',
+  // Python
   py: 'python',
+  pyi: 'python',
+  // Systems languages
   go: 'go',
   rs: 'rust',
-  java: 'java',
   c: 'c',
   cpp: 'cpp',
   cc: 'cpp',
@@ -22,13 +25,40 @@ const EXTENSION_TO_LANGUAGE: Record<string, string> = {
   h: 'c',
   hpp: 'cpp',
   hxx: 'cpp',
-  cs: 'c_sharp',
-  rb: 'ruby',
-  php: 'php',
-  swift: 'swift',
+  // JVM languages
+  java: 'java',
   kt: 'kotlin',
   kts: 'kotlin',
-  vue: 'vue'
+  scala: 'scala',
+  // .NET
+  cs: 'c_sharp',
+  // Web frameworks
+  vue: 'vue',
+  svelte: 'svelte',
+  // Scripting / dynamic
+  rb: 'ruby',
+  php: 'php',
+  lua: 'lua',
+  dart: 'dart',
+  elixir: 'elixir',
+  ex: 'elixir',
+  exs: 'elixir',
+  // Apple
+  swift: 'swift',
+  // Shell
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  // Data / config (parsed as text chunks, not AST)
+  sql: 'sql',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'toml',
+  // Markup
+  html: 'html',
+  css: 'css',
+  scss: 'scss',
+  sass: 'sass',
 };
 
 // Binary and non-code extensions to skip
