@@ -11,6 +11,8 @@ No external dependencies — stdlib only.
 
 from __future__ import annotations
 
+import re
+
 
 def build_investigate_block() -> str:
     """Block that prevents hallucination about unread code. Standard+ intensity."""
@@ -56,6 +58,74 @@ def build_parallel_tools_block() -> str:
         "call them in parallel rather than sequentially for faster context retrieval.\n"
         "</use_parallel_tool_calls>"
     )
+
+
+def _extract_subject(prompt: str, task: str) -> str:
+    """Strip leading task verb from prompt to isolate the subject.
+
+    Example: "Fix the auth timeout bug" → "the auth timeout bug"
+    """
+    # Map task types to verbs commonly leading their prompts.
+    _TASK_VERBS: dict[str, list[str]] = {
+        "debug":    ["fix", "debug", "resolve", "diagnose", "troubleshoot"],
+        "coding":   ["implement", "add", "create", "build", "write", "develop"],
+        "refactor": ["refactor", "restructure", "clean up", "reorganize", "simplify", "extract", "rename"],
+        "review":   ["review", "audit", "check", "inspect", "evaluate", "assess", "critique"],
+        "research": ["explain", "understand", "explore", "research", "investigate", "describe"],
+    }
+
+    verbs = _TASK_VERBS.get(task, [])
+    lowered = prompt.lower()
+    for verb in sorted(verbs, key=len, reverse=True):  # longest first
+        pattern = r'^' + re.escape(verb) + r'\s+'
+        if re.match(pattern, lowered):
+            subject = prompt[len(verb):].strip()
+            return subject if subject else prompt  # Guard: verb-only → use full prompt
+    return prompt
+
+
+# --- Narrative objective templates per task type ---
+_NARRATIVE_TEMPLATES: dict[str, str] = {
+    "debug": (
+        "Identify and fix the root cause of {subject}. "
+        "The deliverable is a minimal, correct code change that resolves the defect "
+        "without breaking existing functionality. "
+        "Success: the issue is resolved and all existing tests pass."
+    ),
+    "coding": (
+        "Implement {subject}. "
+        "The deliverable is working, production-ready code that integrates cleanly "
+        "with the existing codebase. "
+        "Success: the feature works correctly, handles edge cases, and follows project conventions."
+    ),
+    "refactor": (
+        "Refactor {subject}. "
+        "The deliverable is cleaner code with identical external behavior. "
+        "Success: all call sites updated, tests pass, and the public API contract is preserved."
+    ),
+    "review": (
+        "Review and assess {subject}. "
+        "The deliverable is a findings report organized by severity with actionable next steps. "
+        "Success: all issues are documented, grounded in actual code, and prioritized."
+    ),
+    "research": (
+        "Analyze and explain {subject}. "
+        "The deliverable is a clear, grounded explanation backed by codebase evidence. "
+        "Success: key concepts covered with specific file/symbol citations."
+    ),
+}
+
+
+def build_narrative_objective(task: str, raw_prompt: str) -> str:
+    """Build a clean narrative objective from raw prompt and detected task type.
+
+    Produces 2-4 sentences: action verb, deliverable, scope hint, success signal.
+    Preserves original prompt as reference.
+    """
+    subject = _extract_subject(raw_prompt, task)
+    template = _NARRATIVE_TEMPLATES.get(task, _NARRATIVE_TEMPLATES["research"])
+    narrative = template.format(subject=subject)
+    return f"{narrative}\nOriginal request: {raw_prompt}"
 
 
 def build_verification(task: str) -> str:

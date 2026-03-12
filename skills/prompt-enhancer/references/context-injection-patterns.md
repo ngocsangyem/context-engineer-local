@@ -183,6 +183,7 @@ Before you finish, verify:
 </verification>
 
 <objective>
-Fix the auth timeout bug
+Identify and fix the root cause of the auth timeout bug. The deliverable is a minimal, correct code change that resolves the defect without breaking existing functionality. Success: the issue is resolved and all existing tests pass.
+Original request: Fix the auth timeout bug
 </objective>
 ```

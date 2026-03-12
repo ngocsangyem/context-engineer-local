@@ -41,6 +41,7 @@ build_grounding_block = _blocks_mod.build_grounding_block
 build_anti_overengineering_block = _blocks_mod.build_anti_overengineering_block
 build_parallel_tools_block = _blocks_mod.build_parallel_tools_block
 build_verification = _blocks_mod.build_verification
+build_narrative_objective = _blocks_mod.build_narrative_objective
 
 # ---------------------------------------------------------------------------
 # Task type detection and constants
@@ -155,7 +156,7 @@ def enhance(raw_prompt: str, task: str | None, budget: int, intensity: str | Non
         sections.append(f"<verification>\n{build_verification(detected_task)}\n</verification>")
 
     # --- BOTTOM: Objective/query last (up to 30% quality improvement) ---
-    sections.append(f"<objective>\n{normalized}\nOptimize for a correct, codebase-grounded result rather than a plausible-sounding one.\n</objective>")
+    sections.append(f"<objective>\n{build_narrative_objective(detected_task, normalized)}\n</objective>")
     sections.append(f"<done_criteria>\n{_done_criteria(detected_task)}\nStop only when the response satisfies the task and passes verification.\n</done_criteria>")
 
     return "\n\n".join(sections)

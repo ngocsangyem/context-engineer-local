@@ -26,7 +26,7 @@ when available; falls back to built-in file tools (Read, Grep, Glob) when not.
 3. **Select MCP tools** based on task type (see `references/task-type-strategies.md`)
 4. **Query MCP server** using selected tools (parallel when inputs are independent)
 5. **Rank and trim** results to fit token budget (default 4K tokens)
-6. **Assemble enhanced prompt** — context at top, objective at bottom (per best practices)
+6. **Assemble enhanced prompt** — context at top, narrative objective at bottom (action verb, deliverable, scope, success signal)
 7. **Execute** with enriched context
 
 ## Task-Type Detection
@@ -59,7 +59,7 @@ Enhanced prompts follow Anthropic's recommendation — longform context at top, 
 6. `<work_style>` — task-type specific approach
 7. `<grounding>` — quote code before reasoning (standard+)
 8. `<verification>` — imperative self-check (standard+)
-9. `<objective>` — user's original prompt (BOTTOM)
+9. `<objective>` — narrative restatement of user's task with deliverable and success signal (BOTTOM)
 10. `<done_criteria>` — when to stop
 
 ## Token Budget
