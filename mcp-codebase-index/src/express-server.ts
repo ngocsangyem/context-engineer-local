@@ -130,6 +130,32 @@ async function main(): Promise<void> {
     });
   });
 
+  // GET /api/context — lightweight REST endpoint for external consumers (e.g. prompt-enhancer)
+  app.get('/api/context', async (req, res) => {
+    const query = req.query.q as string | undefined;
+    if (!query) {
+      res.status(400).json({ error: 'Missing ?q= query parameter' });
+      return;
+    }
+    if (!servicesReady) {
+      res.status(503).json({ error: 'Index not ready yet' });
+      return;
+    }
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 5, 1), 20);
+    const strategy = (req.query.strategy as string) || 'hybrid';
+    try {
+      const services = await servicesPromise;
+      const results = await services.retriever.search({
+        query,
+        strategy: strategy as 'hybrid' | 'semantic' | 'keyword' | 'structural' | 'symbol',
+        limit,
+      });
+      res.json({ results });
+    } catch (err) {
+      res.status(500).json({ error: 'Search failed' });
+    }
+  });
+
   // Reap idle sessions every minute (30min idle timeout, max 100 concurrent)
   const MAX_SESSIONS = 100;
   const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -154,6 +180,7 @@ async function main(): Promise<void> {
     console.log(`[mcp-codebase-index] HTTP server ready on port ${port}`);
     console.log(`[mcp-codebase-index] MCP endpoint: http://127.0.0.1:${port}/mcp`);
     console.log(`[mcp-codebase-index] Health check: http://127.0.0.1:${port}/health`);
+    console.log(`[mcp-codebase-index] REST API:     http://127.0.0.1:${port}/api/context?q=...`);
   });
 
   // Graceful shutdown
