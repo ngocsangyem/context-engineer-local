@@ -10,13 +10,16 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "start:http": "node dist/express-server.js"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.12.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@parcel/watcher": "^2.5.0",
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "11.10.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "ignore": "^6.0.2",
     "onnxruntime-node": "^1.20.0",
     "web-tree-sitter": "^0.24.0",
@@ -24,8 +27,13 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3"]
   },
   "engines": {
     "node": ">=18.0.0"

@@ -43,9 +43,40 @@ node dist/index.js --path /path/to/your/repo
 }
 ```
 
+**HTTP Transport:**
+
+Start the HTTP server for web-based MCP clients (Cursor, web IDEs, etc.):
+
+```bash
+cd mcp-codebase-index
+pnpm install
+pnpm build
+node dist/express-server.js --path /path/to/your/repo --port 3847
+```
+
+**With Claude Code (HTTP config in `.mcp.json`):**
+
+```json
+{
+  "mcpServers": {
+    "codebase-index": {
+      "transport": "http",
+      "url": "http://127.0.0.1:3847/mcp"
+    }
+  }
+}
+```
+
+Or use the CLI:
+
+```bash
+claude mcp add --transport http codebase-index http://127.0.0.1:3847/mcp
+```
+
 **CLI Options:**
 
 - `--path <dir>` — Directory to index (required)
+- `--port <num>` — HTTP port (default: 3847)
 - `--no-watch` — Disable file watching
 - `--exclude <patterns>` — Comma-separated glob patterns to exclude
 
@@ -62,6 +93,24 @@ mcp-codebase-index/data/
 ```
 
 To reset an index: `rm -rf mcp-codebase-index/data/<project-slug>/`
+
+**MCP Resources:**
+
+Clients can browse indexed data via 4 MCP resources:
+
+- `codebase://stats` — Index statistics (file count, chunks, vectors, graph nodes)
+- `codebase://files` — All indexed files with language and chunk count
+- `codebase://file/{path}` — File symbols, imports, and dependents (URI template)
+- `codebase://symbols/{kind}` — All symbols of a given kind (URI template)
+
+**MCP Prompts:**
+
+Built-in guided exploration prompts:
+
+- `explore-codebase` — Guided overview: repo map, key files, architecture
+- `find-implementation` — Locate where a feature is implemented
+- `analyze-dependencies` — Deep dependency analysis for a file
+- `review-changes` — Review recent code changes with full context
 
 **Performance Targets:**
 
@@ -110,17 +159,21 @@ cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhance
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│              Claude Code / MCP Client            │
-│                                                  │
-│  ┌──────────────────┐  ┌──────────────────────┐ │
-│  │ Prompt Enhancer  │→→│  MCP Codebase Index  │ │
-│  │ (Skill)          │  │  (Server)            │ │
-│  └──────────────────┘  └──────────────────────┘ │
-│         ↓                        ↓               │
-│  Enhanced prompt          7 MCP tools            │
-│  with codebase context    for retrieval          │
-└─────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                 Claude Code / MCP Client                   │
+│                                                            │
+│  ┌─────────────────┐  ┌────────────────────────────────┐  │
+│  │ Prompt Enhancer │  │ MCP Codebase Index (Server)    │  │
+│  │ (Skill)         │→→│                                │  │
+│  └─────────────────┘  │ Transport:                     │  │
+│         ↓             │ • Stdio (index.ts)             │  │
+│  Enhanced prompt      │ • HTTP Express (express-       │  │
+│  with codebase        │   server.ts, port 3847)        │  │
+│  context              │                                │  │
+│                       │ 7 MCP tools, 4 Resources,      │  │
+│                       │ 4 Prompts for retrieval        │  │
+│                       └────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ## Supported Languages
@@ -138,7 +191,7 @@ TypeScript, JavaScript (JSX/TSX), Python, Go, Rust, Java, Kotlin, Scala, C#, C/C
 | Metadata          | SQLite via better-sqlite3      |
 | File watching     | @parcel/watcher                |
 | Keyword search    | ripgrep subprocess             |
-| MCP transport     | Stdio                          |
+| MCP transport     | Stdio + HTTP (Express)         |
 | Skill scripts     | Python 3 (stdlib only)         |
 
 ## Requirements
@@ -154,8 +207,13 @@ context-engineer-local/
 ├── mcp-codebase-index/          # MCP server
 │   ├── data/                    # Index data (gitignored, persists across restarts)
 │   ├── src/
-│   │   ├── index.ts             # Entry point + CLI
-│   │   ├── server/              # MCP tool registration
+│   │   ├── index.ts             # Stdio entry point + CLI
+│   │   ├── express-server.ts    # HTTP entry point (Express + StreamableHTTPServerTransport)
+│   │   ├── server/              # MCP tool, resource, prompt registration
+│   │   │   ├── mcp-server-setup.ts
+│   │   │   ├── mcp-resource-handlers.ts
+│   │   │   ├── mcp-prompt-handlers.ts
+│   │   │   └── server-init.ts   # Shared service initialization
 │   │   ├── indexer/             # File scanning, AST chunking, embeddings
 │   │   ├── storage/             # LanceDB, SQLite, tag graph
 │   │   ├── retrieval/           # Hybrid search, ranking

@@ -15,6 +15,7 @@ const BATCH_SIZE = 32;
 // Lazy-loaded ONNX session — only initialized on first call
 let ortSession: OrtSession | null = null;
 let onnxAvailable = false;
+let onnxInitAttempted = false;
 
 // Minimal type shim for onnxruntime-node (avoids import errors if pkg missing)
 interface OrtTensor {
@@ -30,7 +31,8 @@ interface OrtSession {
  * Silently marks onnxAvailable=false if model or package is missing.
  */
 async function ensureModel(): Promise<void> {
-  if (ortSession !== null || onnxAvailable) return;
+  if (onnxInitAttempted) return;
+  onnxInitAttempted = true;
 
   try {
     // Dynamic import so the server still starts if onnxruntime-node is absent

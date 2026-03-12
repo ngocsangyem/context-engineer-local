@@ -265,6 +265,22 @@ export class MetadataStore {
     return rows.map(rowToSymbol);
   }
 
+  /** Get all indexed files with metadata. */
+  getAllFiles(): FileMetadata[] {
+    const rows = this.db
+      .prepare<[], { path: string; hash: string; last_indexed: number; chunk_count: number; language: string }>(
+        'SELECT path, hash, last_indexed, chunk_count, language FROM files ORDER BY path'
+      )
+      .all();
+    return rows.map((r) => ({
+      path: r.path,
+      hash: r.hash,
+      lastIndexed: r.last_indexed,
+      chunkCount: r.chunk_count,
+      language: r.language,
+    }));
+  }
+
   /** Get all symbols defined in a file. */
   getFileSymbols(filePath: string): SymbolRecord[] {
     const rows = this.db

@@ -14,6 +14,8 @@ import type { IndexerOrchestrator } from '../indexer/indexer-orchestrator.js';
 import type { SearchOptions } from '../retrieval/semantic-search.js';
 import { formatSearchResults, formatRepoMap } from './mcp-result-formatters.js';
 import type { MetadataStore } from '../storage/metadata-store.js';
+import { registerResources } from './mcp-resource-handlers.js';
+import { registerPrompts } from './mcp-prompt-handlers.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -317,6 +319,9 @@ export function createServer(deps: ServerDependencies): McpServer {
       return { content: [{ type: 'text', text: lines.join('\n\n') }] };
     }
   );
+
+  registerResources(server, deps);
+  registerPrompts(server);
 
   return server;
 }

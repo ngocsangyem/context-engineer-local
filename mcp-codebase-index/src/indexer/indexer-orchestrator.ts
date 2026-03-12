@@ -136,8 +136,11 @@ export class IndexerOrchestrator {
         totalChunks += result.chunkCount;
         indexedCount++;
 
-        if (indexedCount % 50 === 0) {
-          this.log(`  Indexed ${indexedCount}/${scannedFiles.length} files...`);
+        // Log progress at ~10% intervals (min every 50 files)
+        const interval = Math.max(50, Math.floor(scannedFiles.length / 10));
+        if (indexedCount % interval === 0) {
+          const pct = Math.round((indexedCount / scannedFiles.length) * 100);
+          this.log(`  Indexing ${indexedCount}/${scannedFiles.length} (${pct}%)...`);
         }
       },
       INDEXING_CONCURRENCY
