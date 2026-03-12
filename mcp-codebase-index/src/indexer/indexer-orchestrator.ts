@@ -114,9 +114,10 @@ export class IndexerOrchestrator {
       }
     }
 
-    // Rebuild tag graph from all collected tags
+    // Rebuild tag graph from all collected tags, then overlay persisted import edges
     this.log('Building dependency graph...');
     this.tagGraph.buildFromTags(allTags);
+    this.tagGraph.loadFromDb(this.metadataStore);
 
     const vectorCount = await this.vectorStore.count();
     const graphStats = this.tagGraph.getStats();
@@ -172,6 +173,7 @@ export class IndexerOrchestrator {
       await this.vectorStore.deleteByFile(fp);
       this.tagGraph.removeFile(fp);
       this.metadataStore.removeSymbols(fp);
+      this.metadataStore.removeEdges(fp);
     }
     this.metadataStore.removeFiles(filePaths);
   }

@@ -9,6 +9,14 @@ import path from 'path';
 import fs from 'fs';
 import type { SymbolRecord } from '../models/symbol.js';
 
+export interface DependencyEdge {
+  fromFile: string;
+  toFile: string;
+  kind: string;
+  symbols: string[];
+  fromLine: number;
+}
+
 export interface FileMetadata {
   path: string;
   hash: string;
@@ -65,6 +73,17 @@ export class MetadataStore {
       CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
       CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
       CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
+
+      CREATE TABLE IF NOT EXISTS dependency_edges (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_file TEXT NOT NULL,
+        to_file   TEXT NOT NULL,
+        kind      TEXT NOT NULL DEFAULT 'import',
+        symbols   TEXT,
+        from_line INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_dep_from ON dependency_edges(from_file);
+      CREATE INDEX IF NOT EXISTS idx_dep_to ON dependency_edges(to_file);
     `);
   }
 
@@ -235,10 +254,65 @@ export class MetadataStore {
     return rows.map(rowToSymbol);
   }
 
+  /* ── Dependency edge methods ───────────────────────────────────────── */
+
+  /**
+   * Replace all edges for a given source file (atomic delete + insert).
+   * edges is the full set of outgoing edges from fromFile.
+   */
+  upsertEdges(fromFile: string, edges: Omit<DependencyEdge, 'fromFile'>[]): void {
+    const del = this.db.prepare('DELETE FROM dependency_edges WHERE from_file = ?');
+    const ins = this.db.prepare(
+      `INSERT INTO dependency_edges (from_file, to_file, kind, symbols, from_line)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+    const tx = this.db.transaction(() => {
+      del.run(fromFile);
+      for (const e of edges) {
+        ins.run(fromFile, e.toFile, e.kind, e.symbols.length > 0 ? JSON.stringify(e.symbols) : null, e.fromLine);
+      }
+    });
+    tx();
+  }
+
+  /** Remove all edges where from_file matches. Called on file deletion. */
+  removeEdges(fromFile: string): void {
+    this.db.prepare('DELETE FROM dependency_edges WHERE from_file = ?').run(fromFile);
+  }
+
+  /** Get all outgoing edges from a file. */
+  getEdges(filePath: string): DependencyEdge[] {
+    const rows = this.db
+      .prepare<[string], Record<string, unknown>>(
+        'SELECT * FROM dependency_edges WHERE from_file = ? ORDER BY from_line'
+      )
+      .all(filePath);
+    return rows.map(rowToEdge);
+  }
+
+  /** Get all edges in the database. Used by TagGraphStore to load graph on startup. */
+  getAllEdges(): DependencyEdge[] {
+    const rows = this.db
+      .prepare<[], Record<string, unknown>>('SELECT * FROM dependency_edges')
+      .all();
+    return rows.map(rowToEdge);
+  }
+
   /** Close the database connection. */
   close(): void {
     this.db.close();
   }
+}
+
+/** Map a SQLite row to a DependencyEdge. */
+function rowToEdge(row: Record<string, unknown>): DependencyEdge {
+  return {
+    fromFile: row.from_file as string,
+    toFile: row.to_file as string,
+    kind: row.kind as string,
+    symbols: row.symbols ? JSON.parse(row.symbols as string) : [],
+    fromLine: row.from_line as number,
+  };
 }
 
 /** Map a SQLite row to a SymbolRecord. */

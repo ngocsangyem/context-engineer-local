@@ -5,6 +5,7 @@
  */
 
 import type { SymbolTag } from '../indexer/ast-chunker.js';
+import type { MetadataStore } from './metadata-store.js';
 
 const PAGERANK_ITERATIONS = 20;
 const PAGERANK_DAMPING = 0.85;
@@ -184,6 +185,29 @@ export class TagGraphStore {
    */
   getDependents(filePath: string): string[] {
     return [...(this.inEdges.get(filePath) ?? [])];
+  }
+
+  /**
+   * Load edges from the MetadataStore SQLite database and rebuild the in-memory graph.
+   * Call this on server startup after indexing to avoid full tag rebuild.
+   * Falls back to existing in-memory state if the DB has no edges.
+   */
+  loadFromDb(metadataStore: MetadataStore): void {
+    const edges = metadataStore.getAllEdges();
+    if (edges.length === 0) return;
+
+    this.outEdges.clear();
+    this.inEdges.clear();
+    this.pageRankScores.clear();
+
+    for (const edge of edges) {
+      this.ensureNode(edge.fromFile);
+      this.ensureNode(edge.toFile);
+      this.outEdges.get(edge.fromFile)!.add(edge.toFile);
+      this.inEdges.get(edge.toFile)!.add(edge.fromFile);
+    }
+
+    this.computePageRank();
   }
 
   getStats(): GraphStats {

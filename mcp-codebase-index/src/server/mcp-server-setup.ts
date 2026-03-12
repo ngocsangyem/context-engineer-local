@@ -127,11 +127,28 @@ export function createServer(deps: ServerDependencies): McpServer {
       const deps = tagGraph.getDependencies(filePath);
       const dependents = tagGraph.getDependents(filePath);
 
+      // Load stored edges to show imported symbol names
+      const edgeMap = new Map<string, string[]>();
+      try {
+        const edges = metadataStore.getEdges(filePath);
+        for (const e of edges) {
+          edgeMap.set(e.toFile, e.symbols);
+        }
+      } catch {
+        // Non-fatal: symbol names are decorative
+      }
+
       const lines: string[] = [`Dependencies for: ${filePath}`, ''];
 
       if (deps.length > 0) {
         lines.push('Imports (direct):');
-        deps.forEach((d) => lines.push(`  -> ${d}`));
+        for (const d of deps) {
+          const symbols = edgeMap.get(d);
+          const symbolSuffix = symbols && symbols.length > 0 && symbols[0] !== '*'
+            ? `  { ${symbols.slice(0, 5).join(', ')}${symbols.length > 5 ? ', ...' : ''} }`
+            : '';
+          lines.push(`  -> ${d}${symbolSuffix}`);
+        }
       } else {
         lines.push('Imports: (none found)');
       }

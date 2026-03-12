@@ -8,6 +8,8 @@ import { chunkFile, type SymbolTag, type CodeChunk } from './ast-chunker.js';
 import { extractSymbols } from './symbol-extractor.js';
 import { generateEmbeddings } from './embedding-generator.js';
 import { hashContent, hasContentChanged } from './content-hasher.js';
+import { parseImports } from './import-parser.js';
+import { resolveImports } from './import-resolver.js';
 import type { LanceVectorStore } from '../storage/lance-vector-store.js';
 import type { MetadataStore } from '../storage/metadata-store.js';
 import type { ScannedFile } from './file-scanner.js';
@@ -85,6 +87,15 @@ export async function processFile(
       metadataStore.upsertSymbols(file.path, symbols);
     } catch (err) {
       process.stderr.write(`Warning: symbol extraction failed for ${file.path}: ${err}\n`);
+    }
+
+    // Parse import statements and persist dependency edges
+    try {
+      const rawImports = parseImports(result.rootNode, language ?? '');
+      const edges = resolveImports(file.path, rawImports);
+      metadataStore.upsertEdges(file.path, edges);
+    } catch (err) {
+      process.stderr.write(`Warning: import parsing failed for ${file.path}: ${err}\n`);
     }
   }
 
