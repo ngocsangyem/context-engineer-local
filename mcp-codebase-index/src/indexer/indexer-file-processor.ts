@@ -5,15 +5,18 @@
 
 import fs from 'fs';
 import { chunkFile, type SymbolTag, type CodeChunk } from './ast-chunker.js';
+import { extractSymbols } from './symbol-extractor.js';
 import { generateEmbeddings } from './embedding-generator.js';
 import { hashContent, hasContentChanged } from './content-hasher.js';
 import type { LanceVectorStore } from '../storage/lance-vector-store.js';
 import type { MetadataStore } from '../storage/metadata-store.js';
 import type { ScannedFile } from './file-scanner.js';
+import type { SymbolRecord } from '../models/symbol.js';
 
 export interface FileProcessResult {
   tags: SymbolTag[];
   chunkCount: number;
+  symbols: SymbolRecord[];
 }
 
 /**
@@ -45,17 +48,15 @@ export async function processFile(
   const language = file.language;
 
   // Parse AST and extract chunks + tags
-  let chunks: CodeChunk[];
-  let tags: SymbolTag[];
+  let result: Awaited<ReturnType<typeof chunkFile>>;
   try {
-    const result = await chunkFile(file.path, content, language ?? 'text');
-    chunks = result.chunks;
-    tags = result.tags;
+    result = await chunkFile(file.path, content, language ?? 'text');
   } catch (err) {
     process.stderr.write(`Warning: chunking failed for ${file.path}: ${err}\n`);
     return null;
   }
 
+  const { chunks, tags } = result;
   if (chunks.length === 0) return null;
 
   // Generate embeddings
@@ -76,8 +77,19 @@ export async function processFile(
     return null;
   }
 
+  // Extract rich symbols from AST (if tree was parsed)
+  let symbols: SymbolRecord[] = [];
+  if (result.rootNode) {
+    try {
+      symbols = extractSymbols(result.rootNode, file.path, language ?? 'text', content);
+      metadataStore.upsertSymbols(file.path, symbols);
+    } catch (err) {
+      process.stderr.write(`Warning: symbol extraction failed for ${file.path}: ${err}\n`);
+    }
+  }
+
   // Update metadata
   metadataStore.setFileMetadata(file.path, hash, chunks.length, language ?? '');
 
-  return { tags, chunkCount: chunks.length };
+  return { tags, chunkCount: chunks.length, symbols };
 }

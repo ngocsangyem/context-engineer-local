@@ -150,7 +150,8 @@ async function main(): Promise<void> {
   }
 
   // 6. Create and connect MCP server
-  const server = createServer({ retriever, structural, tagGraph, orchestrator, rootPath });
+  const metadataStore = orchestrator.getMetadataStore();
+  const server = createServer({ retriever, structural, tagGraph, orchestrator, metadataStore, rootPath });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 

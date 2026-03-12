@@ -37,6 +37,8 @@ export interface SymbolTag {
 export interface ChunkResult {
   chunks: CodeChunk[];
   tags: SymbolTag[];
+  /** Parsed AST root node — available for downstream symbol extraction. Null if parsing failed. */
+  rootNode: Parser.SyntaxNode | null;
 }
 
 let parserInitialized = false;
@@ -123,14 +125,16 @@ export async function chunkFile(
 
     // If no named top-level chunks found, use whole file
     if (chunks.length === 0) {
-      return wholeFileChunk(filePath, content, language);
+      const wfc = wholeFileChunk(filePath, content, language);
+      wfc.rootNode = root;
+      return wfc;
     }
+
+    return { chunks, tags, rootNode: root };
   } catch (err) {
     process.stderr.write(`Warning: AST parsing failed for ${filePath}: ${err}\n`);
     return wholeFileChunk(filePath, content, language);
   }
-
-  return { chunks, tags };
 }
 
 /* ── Import ref extraction ─────────────────────────────────────────── */

@@ -7,6 +7,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import type { SymbolRecord } from '../models/symbol.js';
 
 export interface FileMetadata {
   path: string;
@@ -34,7 +35,7 @@ export class MetadataStore {
     this.initSchema();
   }
 
-  /** Create the files table if it does not already exist. */
+  /** Create tables if they do not already exist. */
   private initSchema(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS files (
@@ -45,6 +46,25 @@ export class MetadataStore {
         language    TEXT    NOT NULL DEFAULT ''
       );
       CREATE INDEX IF NOT EXISTS idx_files_last_indexed ON files(last_indexed);
+
+      CREATE TABLE IF NOT EXISTS symbols (
+        id              TEXT PRIMARY KEY,
+        name            TEXT NOT NULL,
+        qualified_name  TEXT NOT NULL,
+        kind            TEXT NOT NULL,
+        file_path       TEXT NOT NULL,
+        start_line      INTEGER NOT NULL,
+        end_line        INTEGER NOT NULL,
+        signature       TEXT NOT NULL DEFAULT '',
+        parent_symbol   TEXT,
+        visibility      TEXT NOT NULL DEFAULT 'internal',
+        language        TEXT NOT NULL DEFAULT '',
+        parameters      TEXT,
+        return_type     TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
+      CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
+      CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
     `);
   }
 
@@ -152,8 +172,90 @@ export class MetadataStore {
     };
   }
 
+  /* ── Symbol index methods ──────────────────────────────────────────── */
+
+  /** Upsert symbols for a file (replaces all existing symbols for that file). */
+  upsertSymbols(filePath: string, symbols: SymbolRecord[]): void {
+    const del = this.db.prepare('DELETE FROM symbols WHERE file_path = ?');
+    const ins = this.db.prepare(
+      `INSERT INTO symbols (id, name, qualified_name, kind, file_path, start_line, end_line,
+        signature, parent_symbol, visibility, language, parameters, return_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const tx = this.db.transaction((fp: string, syms: SymbolRecord[]) => {
+      del.run(fp);
+      for (const s of syms) {
+        ins.run(
+          s.id, s.name, s.qualifiedName, s.kind, s.filePath,
+          s.startLine, s.endLine, s.signature,
+          s.parentSymbol ?? null, s.visibility, s.language,
+          s.parameters ? JSON.stringify(s.parameters) : null,
+          s.returnType ?? null
+        );
+      }
+    });
+    tx(filePath, symbols);
+  }
+
+  /** Remove all symbols for a file. */
+  removeSymbols(filePath: string): void {
+    this.db.prepare('DELETE FROM symbols WHERE file_path = ?').run(filePath);
+  }
+
+  /** Search symbols by name (prefix match) and optional kind filter. */
+  searchSymbols(
+    query: string,
+    kind?: string,
+    limit = 20
+  ): SymbolRecord[] {
+    let sql = `SELECT * FROM symbols WHERE name LIKE ?`;
+    const params: (string | number)[] = [`${query}%`];
+
+    if (kind) {
+      sql += ` AND kind = ?`;
+      params.push(kind);
+    }
+
+    sql += ` ORDER BY
+      CASE WHEN name = ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END,
+      visibility = 'exported' DESC,
+      name ASC
+      LIMIT ?`;
+    params.push(query, `${query}%`, limit);
+
+    const rows = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+    return rows.map(rowToSymbol);
+  }
+
+  /** Get all symbols defined in a file. */
+  getFileSymbols(filePath: string): SymbolRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM symbols WHERE file_path = ? ORDER BY start_line')
+      .all(filePath) as Array<Record<string, unknown>>;
+    return rows.map(rowToSymbol);
+  }
+
   /** Close the database connection. */
   close(): void {
     this.db.close();
   }
+}
+
+/** Map a SQLite row to a SymbolRecord. */
+function rowToSymbol(row: Record<string, unknown>): SymbolRecord {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    qualifiedName: row.qualified_name as string,
+    kind: row.kind as SymbolRecord['kind'],
+    filePath: row.file_path as string,
+    startLine: row.start_line as number,
+    endLine: row.end_line as number,
+    signature: row.signature as string,
+    parentSymbol: (row.parent_symbol as string) ?? undefined,
+    visibility: row.visibility as 'exported' | 'internal',
+    language: row.language as string,
+    parameters: row.parameters ? JSON.parse(row.parameters as string) : undefined,
+    returnType: (row.return_type as string) ?? undefined,
+  };
 }

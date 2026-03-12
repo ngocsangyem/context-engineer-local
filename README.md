@@ -14,7 +14,7 @@ A standalone MCP server that indexes source code directories and exposes retriev
 
 - Three-layer hybrid retrieval: structural (tree-sitter + PageRank), semantic (LanceDB embeddings), keyword (ripgrep)
 - Real-time file watching with incremental re-indexing
-- 6 MCP tools: `search_codebase`, `get_file_summary`, `get_repo_map`, `get_recent_changes`, `get_dependencies`, `index_status`
+- 7 MCP tools: `search_codebase`, `get_file_summary`, `get_repo_map`, `get_recent_changes`, `get_dependencies`, `search_symbols`, `index_status`
 - Fully local — no cloud dependencies
 
 **Quick Start:**
@@ -118,7 +118,7 @@ cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhance
 │  │ (Skill)          │  │  (Server)            │ │
 │  └──────────────────┘  └──────────────────────┘ │
 │         ↓                        ↓               │
-│  Enhanced prompt          6 MCP tools            │
+│  Enhanced prompt          7 MCP tools            │
 │  with codebase context    for retrieval          │
 └─────────────────────────────────────────────────┘
 ```

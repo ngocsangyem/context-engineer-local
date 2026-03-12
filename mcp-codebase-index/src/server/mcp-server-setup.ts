@@ -13,6 +13,7 @@ import type { TagGraphStore } from '../storage/tag-graph-store.js';
 import type { IndexerOrchestrator } from '../indexer/indexer-orchestrator.js';
 import type { SearchOptions } from '../retrieval/semantic-search.js';
 import { formatSearchResults, formatRepoMap } from './mcp-result-formatters.js';
+import type { MetadataStore } from '../storage/metadata-store.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -21,6 +22,7 @@ export interface ServerDependencies {
   structural: StructuralSearch;
   tagGraph: TagGraphStore;
   orchestrator: IndexerOrchestrator;
+  metadataStore: MetadataStore;
   rootPath: string;
 }
 
@@ -29,7 +31,7 @@ export interface ServerDependencies {
  * Call .connect(transport) after this to start serving.
  */
 export function createServer(deps: ServerDependencies): McpServer {
-  const { retriever, structural, tagGraph, orchestrator, rootPath } = deps;
+  const { retriever, structural, tagGraph, orchestrator, metadataStore, rootPath } = deps;
 
   const server = new McpServer({
     name: 'mcp-codebase-index',
@@ -193,6 +195,43 @@ export function createServer(deps: ServerDependencies): McpServer {
       } catch (err) {
         return { content: [{ type: 'text', text: `Error fetching stats: ${err}` }] };
       }
+    }
+  );
+
+  // Tool 7: search_symbols
+  server.tool(
+    'search_symbols',
+    'Search the symbol index for functions, classes, methods, types by name. Returns signatures, parameters, and locations.',
+    {
+      query: z.string().describe('Symbol name to search (prefix match)'),
+      kind: z
+        .enum(['function', 'class', 'method', 'type', 'interface', 'variable', 'enum'])
+        .optional()
+        .describe('Filter by symbol kind'),
+      limit: z.number().int().min(1).max(50).default(20).describe('Max results'),
+    },
+    async ({ query, kind, limit }) => {
+      const symbols = metadataStore.searchSymbols(query, kind, limit);
+      if (symbols.length === 0) {
+        return { content: [{ type: 'text', text: `No symbols matching "${query}" found.` }] };
+      }
+
+      const lines = symbols.map((s, i) => {
+        const parts = [
+          `[${i + 1}] ${s.visibility === 'exported' ? 'export ' : ''}${s.kind} ${s.qualifiedName}`,
+          `    file: ${s.filePath}:${s.startLine}-${s.endLine}`,
+          `    signature: ${s.signature}`,
+        ];
+        if (s.parameters?.length) {
+          parts.push(`    params: ${s.parameters.map(p => p.type ? `${p.name}: ${p.type}` : p.name).join(', ')}`);
+        }
+        if (s.returnType) {
+          parts.push(`    returns: ${s.returnType}`);
+        }
+        return parts.join('\n');
+      });
+
+      return { content: [{ type: 'text', text: lines.join('\n\n') }] };
     }
   );
 

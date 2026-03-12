@@ -125,6 +125,7 @@ export function wholeFileChunk(filePath: string, content: string, language: stri
       },
     ],
     tags: [],
+    rootNode: null,
   };
 }
 

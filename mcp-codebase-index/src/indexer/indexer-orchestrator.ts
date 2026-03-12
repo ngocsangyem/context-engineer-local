@@ -171,6 +171,7 @@ export class IndexerOrchestrator {
     for (const fp of filePaths) {
       await this.vectorStore.deleteByFile(fp);
       this.tagGraph.removeFile(fp);
+      this.metadataStore.removeSymbols(fp);
     }
     this.metadataStore.removeFiles(filePaths);
   }
@@ -206,6 +207,11 @@ export class IndexerOrchestrator {
   /** Return the resolved data directory path. */
   getIndexDir(): string {
     return this.indexDir;
+  }
+
+  /** Expose the MetadataStore for symbol queries. */
+  getMetadataStore(): MetadataStore {
+    return this.metadataStore;
   }
 
   private log(msg: string): void {
