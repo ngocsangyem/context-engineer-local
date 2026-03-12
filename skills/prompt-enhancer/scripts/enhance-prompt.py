@@ -42,6 +42,7 @@ build_anti_overengineering_block = _blocks_mod.build_anti_overengineering_block
 build_parallel_tools_block = _blocks_mod.build_parallel_tools_block
 build_verification = _blocks_mod.build_verification
 build_narrative_objective = _blocks_mod.build_narrative_objective
+build_diagnosis_block = _blocks_mod.build_diagnosis_block
 
 # ---------------------------------------------------------------------------
 # Task type detection and constants
@@ -142,6 +143,10 @@ def enhance(raw_prompt: str, task: str | None, budget: int, intensity: str | Non
     # --- MIDDLE: Behavioral blocks (conditional on intensity) ---
     if is_standard_plus:
         sections.append(build_investigate_block())
+
+    # --- Diagnosis: think before doing (standard+ only) ---
+    if is_standard_plus:
+        sections.append(build_diagnosis_block(detected_task))
 
     if is_standard_plus and detected_task in ("coding", "refactor"):
         sections.append(build_anti_overengineering_block())

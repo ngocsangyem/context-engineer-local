@@ -154,7 +154,7 @@ class TokenManager
 Fix the auth timeout bug
 ```
 
-**After (enhanced — deep intensity):**
+**After (enhanced — standard intensity, all blocks preserved):**
 ```xml
 <context_budget>
 Total context budget: 4096 tokens
@@ -168,11 +168,30 @@ Allocation:
 Query the MCP codebase index server before generating code or explanations.
 Primary tool: search_codebase(query="Fix the auth timeout bug")
 Secondary tools: get_recent_changes, get_file_summary
+Context focus: error-related code paths, recent diffs, and the file containing the defect
+If MCP server is unavailable: use built-in file tools (Read, Grep, Glob) for context instead.
 </tool_rules>
+
+<use_parallel_tool_calls>
+When multiple MCP tools need to be called and their inputs are independent,
+call them in parallel rather than sequentially for faster context retrieval.
+</use_parallel_tool_calls>
 
 <investigate_before_answering>
 Never speculate about code you have not opened. Read the file before answering.
+Investigate relevant files BEFORE answering questions about the codebase.
 </investigate_before_answering>
+
+<work_style>
+Task type: debug | Intensity: standard
+Locate the defect before proposing a fix. Check recent changes for regressions,
+then implement the minimal correct change.
+</work_style>
+
+<grounding>
+Quote the relevant code snippets or symbols before reasoning about them.
+This grounds your answer in the actual code rather than assumptions.
+</grounding>
 
 <verification>
 Before you finish, verify:
@@ -186,4 +205,11 @@ Before you finish, verify:
 Identify and fix the root cause of the auth timeout bug. The deliverable is a minimal, correct code change that resolves the defect without breaking existing functionality. Success: the issue is resolved and all existing tests pass.
 Original request: Fix the auth timeout bug
 </objective>
+
+<done_criteria>
+The bug is identified, the fix is implemented, and no tests regress.
+Stop only when the response satisfies the task and passes verification.
+</done_criteria>
 ```
+
+**IMPORTANT:** The `<objective>` contains a narrative restatement — NOT the raw prompt. But ALL other XML blocks are preserved. Never output just the narrative without the surrounding block structure.
