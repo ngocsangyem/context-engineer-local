@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """
-enhance-prompt.py — Deterministic prompt enhancement for the prompt-enhancer skill.
+enhance-prompt.py — Prompt enhancement with optional external AI refinement.
 
-Accepts a raw prompt, detects task type and intensity, and outputs a structured
-enhanced prompt following Anthropic's best practices: codebase context at top,
-objective/query at bottom, with conditional blocks based on intensity level.
-
-No external dependencies — stdlib only.
+Builds structured prompts (context-first, query-last) per Anthropic best practices.
+Optionally refines via external AI (Gemini/Ollama/OpenAI) when --provider is set.
 """
 
 from __future__ import annotations
@@ -16,11 +13,7 @@ import importlib.util
 import os
 import re
 import sys
-from textwrap import dedent
 
-# ---------------------------------------------------------------------------
-# Import sibling modules from the same scripts/ directory.
-# ---------------------------------------------------------------------------
 _scripts_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -34,6 +27,11 @@ def _import_module(filename: str, module_name: str):
 
 _intensity_mod = _import_module("detect-intensity.py", "detect_intensity")
 _blocks_mod = _import_module("prompt-blocks.py", "prompt_blocks")
+try:
+    _external_mod = _import_module("external-ai-enhance.py", "external_ai_enhance")
+    enhance_via_external_ai = _external_mod.enhance_via_external_ai
+except Exception:
+    enhance_via_external_ai = None
 
 detect_intensity = _intensity_mod.detect_intensity
 build_investigate_block = _blocks_mod.build_investigate_block
@@ -166,15 +164,17 @@ def enhance(raw_prompt: str, task: str | None, budget: int, intensity: str | Non
     return "\n\n".join(sections)
 
 
+_DONE_CRITERIA = {
+    "debug": "The bug is identified, the fix is implemented, and no tests regress.",
+    "coding": "The feature is implemented, integrates cleanly, and handles error cases.",
+    "refactor": "All affected files are updated, tests pass, and the public API contract is maintained.",
+    "review": "All findings are documented by severity with a suggested next step for each.",
+    "research": "The explanation is grounded in real codebase evidence and covers the key concepts.",
+}
+
+
 def _done_criteria(task: str) -> str:
-    m = {
-        "debug": "The bug is identified, the fix is implemented, and no tests regress.",
-        "coding": "The feature is implemented, integrates cleanly, and handles error cases.",
-        "refactor": "All affected files are updated, tests pass, and the public API contract is maintained.",
-        "review": "All findings are documented by severity with a suggested next step for each.",
-        "research": "The explanation is grounded in real codebase evidence and covers the key concepts.",
-    }
-    return m.get(task, m["research"])
+    return _DONE_CRITERIA.get(task, _DONE_CRITERIA["research"])
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +187,12 @@ def main() -> None:
     parser.add_argument("--task", choices=sorted(TASK_KEYWORDS.keys()), default=None, help="Override task-type detection.")
     parser.add_argument("--budget", type=int, default=4096, help="Token budget for injected context (default: 4096).")
     parser.add_argument("--intensity", choices=["light", "standard", "deep"], default=None, help="Override intensity detection.")
+    parser.add_argument("--provider", choices=["gemini", "ollama", "openai", "none"], default=None, help="External AI provider for prompt improvement.")
     args = parser.parse_args()
-    print(enhance(args.prompt, args.task, args.budget, args.intensity))
+    result = enhance(args.prompt, args.task, args.budget, args.intensity)
+    if args.provider and args.provider != "none" and enhance_via_external_ai:
+        result = enhance_via_external_ai(args.prompt, result, args.provider)
+    print(result)
 
 
 if __name__ == "__main__":

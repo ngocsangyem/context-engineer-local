@@ -135,6 +135,7 @@ A Claude Code skill that enriches user prompts with relevant codebase context. W
 - **Hybrid retrieval** for refactor/review tasks — runs MCP + file-tools in parallel when MCP is available
 - **Quality gates** — automatically falls back to file-tools when MCP returns low-quality results
 - **Framework-aware queries** — generates optimized Grep patterns for Vue, React, Svelte, Python, Go, TypeScript
+- **External AI provider** — optionally offload prompt improvement to Gemini, Ollama, or OpenAI-compatible APIs (saves Claude tokens)
 
 **Script Usage:**
 
@@ -142,7 +143,27 @@ A Claude Code skill that enriches user prompts with relevant codebase context. W
 python3 skills/prompt-enhancer/scripts/enhance-prompt.py "Fix the auth timeout bug"
 python3 skills/prompt-enhancer/scripts/enhance-prompt.py "Rename variable" --intensity light
 python3 skills/prompt-enhancer/scripts/enhance-prompt.py "Refactor auth" --intensity deep --budget 8192
+python3 skills/prompt-enhancer/scripts/enhance-prompt.py "Fix auth bug" --provider gemini
 ```
+
+**External AI Provider (Optional):**
+
+Offload prompt refinement to an external model instead of using Claude's context window. Set via env vars or `.mcp.json`:
+
+```bash
+# Via .env file in skill folder
+PROMPT_ENHANCER_PROVIDER=gemini   # or ollama, openai, none
+GEMINI_API_KEY=your-key
+
+# Ollama
+PROMPT_ENHANCER_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+> Note: Do not commit/upload the `.env` file
+
+Supports Gemini (SDK), Ollama (local HTTP), and any OpenAI-compatible API (vLLM, LM Studio, Groq). Falls back to deterministic output on any failure.
 
 **Setup as a Claude Code Skill:**
 
@@ -232,9 +253,10 @@ context-engineer-local/
 │   └── prompt-enhancer/         # Claude Code skill (works standalone)
 │       ├── SKILL.md             # Skill definition — quality gates, hybrid retrieval, framework-aware queries
 │       ├── scripts/
-│       │   ├── enhance-prompt.py    # Main prompt builder
-│       │   ├── detect-intensity.py  # Intensity detection
-│       │   └── prompt-blocks.py     # XML block builders
+│       │   ├── enhance-prompt.py        # Main prompt builder + --provider integration
+│       │   ├── external-ai-enhance.py   # External AI providers (Gemini/Ollama/OpenAI)
+│       │   ├── detect-intensity.py      # Intensity detection
+│       │   └── prompt-blocks.py         # XML block builders
 │       └── references/
 │           ├── context-injection-patterns.md  # MCP + file-tool result formatting
 │           └── task-type-strategies.md        # Per-task retrieval strategies, quality gates, framework hints

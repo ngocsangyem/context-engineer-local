@@ -21,6 +21,19 @@ when available; falls back to built-in file tools (Read, Grep, Glob) when not.
 
 ## Workflow
 
+**IMPORTANT — External AI check (do this FIRST):**
+Before building the prompt yourself, check if an external AI provider is configured:
+
+```bash
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/prompt-enhancer/scripts/enhance-prompt.py" "<USER_PROMPT>" --provider gemini
+```
+
+Run this Bash command (replace `<USER_PROMPT>` with the user's actual prompt text). The script auto-detects the provider from `.env` files. If `PROMPT_ENHANCER_PROVIDER` is set (gemini/ollama/openai), the script calls the external AI and outputs the enhanced prompt — use that output directly as your working instructions. If the script falls back to deterministic mode (no provider configured), proceed with the manual workflow below.
+
+**Quick check:** Run `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/prompt-enhancer/scripts/enhance-prompt.py" "test" 2>&1 1>/dev/null` — if you see `[prompt-enhancer] Enhancing via ...` on stderr, external AI is active.
+
+**Manual workflow (when no external AI provider is configured):**
+
 1. **Detect task type** from user prompt (coding, debug, review, refactor, research)
 2. **Detect intensity** level (light, standard, deep) from prompt keywords and task type
 3. **Select MCP tools** based on task type (see `references/task-type-strategies.md`)
@@ -176,6 +189,93 @@ python3 scripts/enhance-prompt.py "Fix the auth timeout bug"
 python3 scripts/enhance-prompt.py "Fix the auth timeout bug" --intensity deep
 python3 scripts/enhance-prompt.py "Rename variable" --intensity light --budget 2048
 python3 scripts/enhance-prompt.py "Refactor auth module" --task refactor
+python3 scripts/enhance-prompt.py "Fix auth bug" --provider gemini
+python3 scripts/enhance-prompt.py "Refactor auth" --provider ollama --intensity deep
+```
+
+## External AI Provider (Optional)
+
+Offload prompt improvement to an external AI instead of consuming Claude's context window.
+The deterministic prompt is built first, then optionally refined by an external model.
+
+### Provider Setup
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PROMPT_ENHANCER_PROVIDER` | `none` | Provider: `gemini`, `ollama`, `openai`, or `none` |
+| `GEMINI_API_KEY` | — | Google API key (shared across skills) |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `llama3.2` | Ollama model name |
+| `OPENAI_API_KEY` | — | OpenAI or compatible API key |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Model name |
+
+### Configuration
+
+**Claude Code** (`.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "codebase-index": {
+      "command": "node",
+      "args": ["path/to/mcp-codebase-index/dist/index.js", "--path", "/your/repo"],
+      "env": {
+        "PROMPT_ENHANCER_PROVIDER": "gemini",
+        "GEMINI_API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
+
+**Cursor** (`~/.cursor/mcp.json`) — same JSON format as Claude Code.
+
+**Windsurf** (`~/.codeium/windsurf/mcp_config.json`) — same JSON format.
+
+**Via .env file** (either location works):
+```bash
+# Option 1: Inside .claude/ (standard hierarchy)
+# .claude/skills/prompt-enhancer/.env
+
+# Option 2: Next to the skill (auto-detected fallback)
+# skills/prompt-enhancer/.env
+
+PROMPT_ENHANCER_PROVIDER=gemini
+GEMINI_API_KEY=your-key-here
+```
+
+**Ollama (local)**:
+```bash
+ollama pull llama3.2
+# .claude/skills/prompt-enhancer/.env
+PROMPT_ENHANCER_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2
+```
+
+**OpenAI-compatible** (vLLM, LM Studio, Groq, Together):
+```bash
+# .claude/skills/prompt-enhancer/.env
+PROMPT_ENHANCER_PROVIDER=openai
+OPENAI_BASE_URL=http://localhost:1234/v1   # LM Studio
+OPENAI_API_KEY=lm-studio                    # LM Studio uses any string
+OPENAI_MODEL=your-local-model
+```
+
+### Fallback Behavior
+
+1. External AI succeeds → return AI-improved prompt
+2. API key missing → return deterministic prompt + stderr notice
+3. API call fails (timeout/error) → return deterministic prompt + stderr notice
+4. AI response fails validation → return deterministic prompt + stderr notice
+
+The enhancement pipeline never fails — it always returns a usable prompt.
+
+### Standalone Testing
+
+```bash
+python3 scripts/external-ai-enhance.py "Test prompt" --provider gemini
+python3 scripts/external-ai-enhance.py "Test prompt" --provider ollama
 ```
 
 ## References
