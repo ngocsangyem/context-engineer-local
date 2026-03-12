@@ -8,6 +8,9 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import type { SymbolRecord } from '../models/symbol.js';
+import { batchWriteFileResults, batchRemoveFiles, type FileWriteResult } from './metadata-store-batch-ops.js';
+
+export type { FileWriteResult };
 
 export interface CallEdge {
   callerFile: string;
@@ -61,7 +64,15 @@ export class MetadataStore {
         chunk_count  INTEGER NOT NULL DEFAULT 0,
         language    TEXT    NOT NULL DEFAULT ''
       );
-      CREATE INDEX IF NOT EXISTS idx_files_last_indexed ON files(last_indexed);
+      CREATE INDEX IF NOT EXISTS idx_files_last_indexed ON files(last_indexed);`);
+
+    // Migration: add mtime column if it doesn't exist (safe on existing DBs)
+    const cols = this.db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === 'mtime')) {
+      this.db.exec('ALTER TABLE files ADD COLUMN mtime INTEGER');
+    }
+
+    this.db.exec(`
 
       CREATE TABLE IF NOT EXISTS symbols (
         id              TEXT PRIMARY KEY,
@@ -115,6 +126,41 @@ export class MetadataStore {
       .prepare<[string], { hash: string }>('SELECT hash FROM files WHERE path = ?')
       .get(filePath);
     return row?.hash ?? null;
+  }
+
+  /**
+   * Get the last_indexed timestamp (ms epoch) for a file.
+   * Returns null if the file has never been indexed.
+   */
+  getFileLastIndexed(filePath: string): number | null {
+    const row = this.db
+      .prepare<[string], { last_indexed: number }>('SELECT last_indexed FROM files WHERE path = ?')
+      .get(filePath);
+    return row?.last_indexed ?? null;
+  }
+
+  /**
+   * Load all last_indexed timestamps into a Map.
+   * Single query — avoids N+1 when checking many files.
+   */
+  getAllFileLastIndexed(): Map<string, number> {
+    const rows = this.db
+      .prepare<[], { path: string; last_indexed: number }>('SELECT path, last_indexed FROM files')
+      .all();
+    const result = new Map<string, number>();
+    for (const r of rows) result.set(r.path, r.last_indexed);
+    return result;
+  }
+
+  /**
+   * Get the MAX(last_indexed) across all files — used as the "last full index" timestamp.
+   * Returns null if the index is empty.
+   */
+  getLastIndexTimestamp(): number | null {
+    const row = this.db
+      .prepare<[], { ts: number | null }>('SELECT MAX(last_indexed) AS ts FROM files')
+      .get();
+    return row?.ts ?? null;
   }
 
   /**
@@ -172,13 +218,18 @@ export class MetadataStore {
 
   /**
    * Remove metadata for multiple files in a single transaction.
+   * Also removes associated symbols, edges, and call_edges.
    */
   removeFiles(filePaths: string[]): void {
-    const del = this.db.prepare('DELETE FROM files WHERE path = ?');
-    const tx = this.db.transaction((paths: string[]) => {
-      for (const p of paths) del.run(p);
-    });
-    tx(filePaths);
+    batchRemoveFiles(this.db, filePaths);
+  }
+
+  /**
+   * Write results for multiple files in a single SQLite transaction.
+   * Replaces all symbols, edges, call_edges, and file metadata for each file.
+   */
+  batchWriteFileResults(results: FileWriteResult[]): void {
+    batchWriteFileResults(this.db, results);
   }
 
   /** Return aggregate statistics about the index. */

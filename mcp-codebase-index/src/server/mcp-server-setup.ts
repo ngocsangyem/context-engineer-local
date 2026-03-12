@@ -32,8 +32,24 @@ export interface ServerDependencies {
  * Create and configure the MCP server with all 6 tools.
  * Call .connect(transport) after this to start serving.
  */
-export function createServer(deps: ServerDependencies): McpServer {
-  const { retriever, structural, tagGraph, orchestrator, metadataStore, rootPath } = deps;
+/**
+ * Create a deferred MCP server that initializes immediately but awaits
+ * services lazily when tools are called. Allows HTTP handshake to complete
+ * while indexing is still in progress.
+ */
+export function createDeferredServer(depsPromise: Promise<ServerDependencies>): McpServer {
+  return createServer(null as unknown as ServerDependencies, depsPromise);
+}
+
+export function createServer(deps: ServerDependencies, deferredDeps?: Promise<ServerDependencies>): McpServer {
+  // Lazy resolver: if deferredDeps provided, tools await it; otherwise use deps directly
+  const getDeps = deferredDeps
+    ? (() => { let cached: ServerDependencies | null = null; return async () => cached ??= await deferredDeps; })()
+    : async () => deps;
+
+  const rootPath = deps?.rootPath ?? '';
+  // Helper to get rootPath (may not be available until deps resolve)
+  const getRootPath = async () => (await getDeps()).rootPath;
 
   const server = new McpServer({
     name: 'mcp-codebase-index',
@@ -58,6 +74,7 @@ export function createServer(deps: ServerDependencies): McpServer {
         .describe('If true, expand top results with call-graph context (callers/callees)'),
     },
     async ({ query, strategy, limit, file_pattern, expand }) => {
+      const { retriever } = await getDeps();
       const opts: SearchOptions = { query, strategy, limit, filePattern: file_pattern, expand };
       const results = await retriever.search(opts);
       return { content: [{ type: 'text', text: formatSearchResults(results) }] };
@@ -70,6 +87,7 @@ export function createServer(deps: ServerDependencies): McpServer {
     'Get a structural outline (symbols, imports, dependents) for a file.',
     { path: z.string().describe('Absolute or relative path to the file') },
     async ({ path: filePath }) => {
+      const { structural } = await getDeps();
       const summary = await structural.getFileSummary(filePath);
       return { content: [{ type: 'text', text: summary || `No summary available for ${filePath}` }] };
     }
@@ -84,6 +102,7 @@ export function createServer(deps: ServerDependencies): McpServer {
       max_tokens: z.number().int().min(256).max(16384).default(2048).describe('Token budget'),
     },
     async ({ scope, max_tokens }) => {
+      const { retriever } = await getDeps();
       const entries = await retriever.getRepoMap(scope, max_tokens);
       return { content: [{ type: 'text', text: formatRepoMap(entries) }] };
     }
@@ -99,7 +118,8 @@ export function createServer(deps: ServerDependencies): McpServer {
     },
     async ({ since, limit }) => {
       try {
-        const gitOpts = { cwd: rootPath };
+        const rp = await getRootPath();
+        const gitOpts = { cwd: rp };
         const [logResult, diffResult] = await Promise.allSettled([
           execFileAsync('git', ['log', '--oneline', `--since=${since}`, `-n`, String(limit)], gitOpts),
           execFileAsync('git', ['diff', '--stat', `HEAD~${Math.min(limit, 10)}`], gitOpts),
@@ -130,7 +150,8 @@ export function createServer(deps: ServerDependencies): McpServer {
       depth: z.number().int().min(1).max(2).default(1).describe('Dependency depth: 1 = direct imports only, 2 = also shows transitive (depth-2) imports'),
     },
     async ({ path: filePath, depth }) => {
-      const deps = tagGraph.getDependencies(filePath);
+      const { tagGraph, metadataStore } = await getDeps();
+      const depsList = tagGraph.getDependencies(filePath);
       const dependents = tagGraph.getDependents(filePath);
 
       // Load stored edges to show imported symbol names
@@ -146,9 +167,9 @@ export function createServer(deps: ServerDependencies): McpServer {
 
       const lines: string[] = [`Dependencies for: ${filePath}`, ''];
 
-      if (deps.length > 0) {
+      if (depsList.length > 0) {
         lines.push('Imports (direct):');
-        for (const d of deps) {
+        for (const d of depsList) {
           const symbols = edgeMap.get(d);
           const symbolSuffix = symbols && symbols.length > 0 && symbols[0] !== '*'
             ? `  { ${symbols.slice(0, 5).join(', ')}${symbols.length > 5 ? ', ...' : ''} }`
@@ -169,9 +190,9 @@ export function createServer(deps: ServerDependencies): McpServer {
       }
 
       // Depth > 1: expand one more level
-      if (depth > 1 && deps.length > 0) {
+      if (depth > 1 && depsList.length > 0) {
         lines.push('\nTransitive imports (depth 2):');
-        for (const dep of deps.slice(0, 10)) {
+        for (const dep of depsList.slice(0, 10)) {
           const transitive = tagGraph.getDependencies(dep);
           if (transitive.length > 0) {
             lines.push(`  ${dep} imports:`);
@@ -191,6 +212,7 @@ export function createServer(deps: ServerDependencies): McpServer {
     {},
     async () => {
       try {
+        const { orchestrator } = await getDeps();
         const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
         const stats = await orchestrator.getStats();
         const dataPath = orchestrator.getIndexDir();
@@ -236,6 +258,7 @@ export function createServer(deps: ServerDependencies): McpServer {
     },
     async ({ symbol, direction, file, limit }) => {
       try {
+        const { metadataStore } = await getDeps();
         const lines: string[] = [];
 
         if (direction === 'callers') {
@@ -296,6 +319,7 @@ export function createServer(deps: ServerDependencies): McpServer {
       limit: z.number().int().min(1).max(50).default(20).describe('Max results'),
     },
     async ({ query, kind, limit }) => {
+      const { metadataStore } = await getDeps();
       const symbols = metadataStore.searchSymbols(query, kind, limit);
       if (symbols.length === 0) {
         return { content: [{ type: 'text', text: `No symbols matching "${query}" found.` }] };
@@ -320,7 +344,7 @@ export function createServer(deps: ServerDependencies): McpServer {
     }
   );
 
-  registerResources(server, deps);
+  registerResources(server, getDeps);
   registerPrompts(server);
 
   return server;

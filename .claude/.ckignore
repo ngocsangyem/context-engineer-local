@@ -4,10 +4,10 @@
 
 # JS/TS
 node_modules
-dist
 build
 .next
 .nuxt
+!dist
 
 # Python
 __pycache__
@@ -25,3 +25,4 @@ coverage
 # Allow reading these files
 !.env
 !.env.*
+!dist/test

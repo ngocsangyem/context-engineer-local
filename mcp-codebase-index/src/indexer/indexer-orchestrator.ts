@@ -1,19 +1,21 @@
 /**
  * Orchestrates the full indexing pipeline:
- * scan → hash-check → AST-chunk → embed → store vectors → build graph → store metadata.
+ * scan → hash-check → AST-chunk → embed → batch-store vectors → build graph → batch-store metadata.
  *
  * Supports full re-index, incremental update, and file removal.
- * Uses parallel file processing with a concurrency limit for faster indexing.
+ * Uses parallel file processing with a concurrency limit and batch I/O flushes.
  */
 
 import fs from 'fs';
 import path from 'path';
 import { scanFiles, type ScannedFile } from './file-scanner.js';
-import { processFile } from './indexer-file-processor.js';
+import { processFile, type FileProcessOutput } from './indexer-file-processor.js';
 import type { SymbolTag } from './ast-chunker.js';
 import { LanceVectorStore } from '../storage/lance-vector-store.js';
 import { TagGraphStore } from '../storage/tag-graph-store.js';
 import { MetadataStore } from '../storage/metadata-store.js';
+import { buildGitChangedSet, canSkipByMtime, filterByGitChanges } from './indexer-change-detection-helpers.js';
+import { buildIndexPipeline } from './indexing-pipeline.js';
 
 export interface OrchestratorConfig {
   rootPath: string;
@@ -70,7 +72,6 @@ export class IndexerOrchestrator {
 
   constructor(rootPath: string, config: Partial<OrchestratorConfig> = {}) {
     this.rootPath = path.resolve(rootPath);
-    // indexDir: use provided absolute path, or fall back to <rootPath>/.index/
     this.indexDir = config.indexDir
       ? path.resolve(config.indexDir)
       : path.resolve(rootPath, '.index');
@@ -93,12 +94,39 @@ export class IndexerOrchestrator {
     await this.vectorStore.init();
   }
 
+  /** Flush accumulated file outputs to vector store and metadata store. */
+  private async flushBatch(batch: FileProcessOutput[]): Promise<void> {
+    if (batch.length === 0) return;
+
+    // Batch vector store upsert
+    await this.vectorStore.batchUpsert(
+      batch.map((r) => ({ chunks: r.chunks, embeddings: r.embeddings }))
+    );
+
+    // Batch SQLite write (single transaction for all files)
+    this.metadataStore.batchWriteFileResults(
+      batch.map((r) => ({
+        filePath: r.filePath,
+        hash: r.hash,
+        chunkCount: r.chunkCount,
+        language: r.language,
+        symbols: r.symbols,
+        edges: r.edges,
+        callEdges: r.callEdges,
+      }))
+    );
+  }
+
   /**
    * Full index pipeline: scan all files and index any that are new or changed.
    * Removes stale files from index if they no longer exist on disk.
+   *
+   * @param options.force When true, skips all change detection and re-indexes everything.
    */
-  async indexAll(): Promise<IndexStats> {
+  async indexAll(options?: { force?: boolean }): Promise<IndexStats> {
     await this.ensureInit();
+    const force = options?.force ?? false;
+
     this.log('Starting full index scan...');
 
     const scannedFiles = scanFiles(this.rootPath, {
@@ -108,6 +136,9 @@ export class IndexerOrchestrator {
 
     this.log(`Found ${scannedFiles.length} files to consider.`);
 
+    // Build set of git-changed files for mtime pre-filter (Tier 1 fast path)
+    const gitChangedSet = await buildGitChangedSet(this.rootPath, this.metadataStore, this.log.bind(this));
+
     // Remove stale files (deleted from disk but still in index)
     const currentPaths = scannedFiles.map((f) => f.path);
     const staleFiles = this.metadataStore.getStaleFiles(currentPaths);
@@ -116,35 +147,34 @@ export class IndexerOrchestrator {
       await this.removeFiles(staleFiles);
     }
 
-    // Index new/changed files in parallel with bounded concurrency
-    const allTags: SymbolTag[] = [];
-    let indexedCount = 0;
-    let skippedCount = 0;
-    let totalChunks = 0;
+    // Pre-load all last_indexed timestamps in one query (avoids N+1)
+    const lastIndexedMap = this.metadataStore.getAllFileLastIndexed();
 
-    this.log(`Processing files with concurrency=${INDEXING_CONCURRENCY}...`);
-    await runWithConcurrency(
-      scannedFiles,
-      async (file) => {
-        const result = await processFile(file, this.vectorStore, this.metadataStore);
-        if (result === null) {
-          skippedCount++;
-          return;
-        }
-        // JS array push is safe in single-threaded async context
-        allTags.push(...result.tags);
-        totalChunks += result.chunkCount;
-        indexedCount++;
+    // Apply mtime pre-filter before feeding files into the pipeline
+    const filesToIndex = force
+      ? scannedFiles
+      : scannedFiles.filter((file) => {
+          if (canSkipByMtime(file.path, gitChangedSet, lastIndexedMap)) return false;
+          return true;
+        });
 
-        // Log progress at ~10% intervals (min every 50 files)
-        const interval = Math.max(50, Math.floor(scannedFiles.length / 10));
-        if (indexedCount % interval === 0) {
-          const pct = Math.round((indexedCount / scannedFiles.length) * 100);
-          this.log(`  Indexing ${indexedCount}/${scannedFiles.length} (${pct}%)...`);
-        }
-      },
-      INDEXING_CONCURRENCY
-    );
+    const skippedCount = scannedFiles.length - filesToIndex.length;
+
+    this.log(`Processing ${filesToIndex.length} files via streaming pipeline (${skippedCount} skipped by mtime)...`);
+
+    // 3-stage streaming pipeline: Parse → Embed → Store
+    const pipelineResult = await buildIndexPipeline({
+      files: filesToIndex,
+      metadataStore: this.metadataStore,
+      vectorStore: this.vectorStore,
+      tagGraph: this.tagGraph,
+      rootPath: this.rootPath,
+      force,
+    });
+
+    const allTags = pipelineResult.tags;
+    const indexedCount = pipelineResult.indexedFiles;
+    const totalChunks = pipelineResult.totalChunks;
 
     // Rebuild tag graph from all collected tags, then overlay persisted import edges
     this.log('Building dependency graph...');
@@ -176,38 +206,57 @@ export class IndexerOrchestrator {
 
   /**
    * Incrementally index a specific set of files (e.g. after file-watcher events).
+   * If a git repo, uses git change detection to narrow to actually-changed files.
    */
   async indexFiles(filePaths: string[]): Promise<void> {
     await this.ensureInit();
+
+    // Git fast path: filter to only files git considers changed
+    const filesToProcess = await filterByGitChanges(this.rootPath, filePaths, this.metadataStore, this.log.bind(this));
+
     const allTags: SymbolTag[] = [];
+    const pendingBatch: FileProcessOutput[] = [];
 
-    for (const filePath of filePaths) {
-      const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
-      const scanned: ScannedFile = {
-        path: filePath,
-        relativePath: path.relative(this.rootPath, filePath),
-        extension: ext,
-        language: null,
-      };
-      const result = await processFile(scanned, this.vectorStore, this.metadataStore, true);
-      if (result) allTags.push(...result.tags);
-    }
+    await runWithConcurrency(
+      filesToProcess,
+      async (filePath) => {
+        const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+        const scanned: ScannedFile = {
+          path: filePath,
+          relativePath: path.relative(this.rootPath, filePath),
+          extension: ext,
+          language: null,
+        };
+        const result = await processFile(scanned, this.metadataStore, true);
+        if (result) {
+          allTags.push(...result.tags);
+          pendingBatch.push(result);
+        }
+      },
+      INDEXING_CONCURRENCY
+    );
 
+    await this.flushBatch(pendingBatch);
     this.tagGraph.addTags(allTags);
   }
 
   /**
    * Remove deleted files from the vector store, graph, and metadata.
+   * Uses batch operations for efficiency.
    */
   async removeFiles(filePaths: string[]): Promise<void> {
+    if (filePaths.length === 0) return;
     await this.ensureInit();
+
+    // Batch delete from vector store
+    await this.vectorStore.batchDeleteFiles(filePaths);
+
+    // Remove from tag graph
     for (const fp of filePaths) {
-      await this.vectorStore.deleteByFile(fp);
       this.tagGraph.removeFile(fp);
-      this.metadataStore.removeSymbols(fp);
-      this.metadataStore.removeEdges(fp);
-      this.metadataStore.removeCallEdges(fp);
     }
+
+    // Batch delete from SQLite (symbols + edges + call_edges + files in one transaction)
     this.metadataStore.removeFiles(filePaths);
   }
 

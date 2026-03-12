@@ -15,6 +15,7 @@ if (!process.env.RUST_LOG) process.env.RUST_LOG = 'off';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './server/mcp-server-setup.js';
 import { initializeServices, resolveDataDir, parseBaseArgs } from './server/server-init.js';
+import { shutdownEmbeddingPool } from './indexer/embedding-generator.js';
 
 // ---------------------------------------------------------------------------
 // Main
@@ -23,10 +24,10 @@ import { initializeServices, resolveDataDir, parseBaseArgs } from './server/serv
 async function main(): Promise<void> {
   const { base } = parseBaseArgs(process.argv);
   if (!base.rootPath) {
-    process.stderr.write('Usage: mcp-codebase-index --path <directory> [--no-watch] [--exclude <patterns>]\n');
+    process.stderr.write('Usage: mcp-codebase-index --path <directory> [--no-watch] [--exclude <patterns>] [--pool-size N]\n');
     process.exit(1);
   }
-  const { rootPath, watch, excludePatterns } = base;
+  const { rootPath, watch, excludePatterns, poolSize } = base;
   const dataDir = resolveDataDir(rootPath);
 
   process.stderr.write(`[mcp-codebase-index] Starting — root: ${rootPath}\n`);
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
     watch,
     excludePatterns,
     dataDir,
+    poolSize,
     logFn: (msg) => process.stderr.write(msg + '\n'),
   });
 
@@ -59,6 +61,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     process.stderr.write(`[mcp-codebase-index] Received ${signal}, shutting down...\n`);
     if (services.watcher) await services.watcher.stop();
+    await shutdownEmbeddingPool();
     process.exit(0);
   };
 

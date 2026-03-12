@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { IndexerOrchestrator } from '../indexer/indexer-orchestrator.js';
+import { configureEmbeddingPool } from '../indexer/embedding-generator.js';
 import { SemanticSearch } from '../retrieval/semantic-search.js';
 import { StructuralSearch } from '../retrieval/structural-search.js';
 import { HybridRetriever } from '../retrieval/hybrid-retriever.js';
@@ -67,13 +68,15 @@ export interface BaseCliArgs {
   rootPath: string;
   watch: boolean;
   excludePatterns: string[];
+  poolSize?: number;
 }
 
-/** Parse shared CLI flags (--path, --watch, --no-watch, --exclude). Returns extras for caller. */
+/** Parse shared CLI flags (--path, --watch, --no-watch, --exclude, --pool-size). Returns extras for caller. */
 export function parseBaseArgs(argv: string[]): { base: BaseCliArgs; extras: Map<string, string> } {
   const args = argv.slice(2);
   let rootPath = '';
   let watch = true;
+  let poolSize: number | undefined;
   const excludePatterns: string[] = [];
   const extras = new Map<string, string>();
 
@@ -84,13 +87,16 @@ export function parseBaseArgs(argv: string[]): { base: BaseCliArgs; extras: Map<
     else if (arg === '--no-watch') watch = false;
     else if (arg === '--exclude' && args[i + 1]) {
       excludePatterns.push(...args[++i].split(',').map((p) => p.trim()).filter(Boolean));
+    } else if (arg === '--pool-size' && args[i + 1]) {
+      const n = parseInt(args[++i], 10);
+      if (!isNaN(n) && n > 0) poolSize = n;
     } else if (arg.startsWith('--') && args[i + 1] && !args[i + 1].startsWith('--')) {
       extras.set(arg, args[++i]);
     }
   }
 
   return {
-    base: { rootPath: rootPath ? path.resolve(rootPath) : '', watch, excludePatterns },
+    base: { rootPath: rootPath ? path.resolve(rootPath) : '', watch, excludePatterns, poolSize },
     extras,
   };
 }
@@ -104,6 +110,7 @@ export interface InitOptions {
   watch: boolean;
   excludePatterns: string[];
   dataDir: string;
+  poolSize?: number;
   logFn?: (msg: string) => void;
 }
 
@@ -112,7 +119,13 @@ export interface InitOptions {
  * Shared between stdio and HTTP entry points.
  */
 export async function initializeServices(opts: InitOptions): Promise<InitializedServices> {
-  const { rootPath, watch, excludePatterns, dataDir, logFn = (m) => process.stderr.write(m + '\n') } = opts;
+  const { rootPath, watch, excludePatterns, dataDir, poolSize, logFn = (m) => process.stderr.write(m + '\n') } = opts;
+
+  // 0. Configure embedding pool size before first use (no-op if already initialized)
+  if (poolSize !== undefined) {
+    configureEmbeddingPool({ poolSize });
+    logFn(`[mcp-codebase-index] Embedding pool size: ${poolSize}`);
+  }
 
   // 1. Gitignore filter
   const gitignoreFilter = new GitignoreFilter(rootPath);

@@ -142,6 +142,60 @@ export class LanceVectorStore {
     await table.delete(`"filePath" = '${escaped}'`);
   }
 
+  /**
+   * Delete vector records for multiple files in a single filter operation.
+   */
+  async batchDeleteFiles(filePaths: string[]): Promise<void> {
+    if (filePaths.length === 0) return;
+    const table = this.ensureReady();
+    // Chunk to avoid overly long OR-filter strings
+    const CHUNK_SIZE = 200;
+    for (let i = 0; i < filePaths.length; i += CHUNK_SIZE) {
+      const chunk = filePaths.slice(i, i + CHUNK_SIZE);
+      const conditions = chunk
+        .map((fp) => `"filePath" = '${fp.replace(/'/g, "''")}'`)
+        .join(' OR ');
+      await table.delete(conditions);
+    }
+  }
+
+  /**
+   * Batch upsert chunks+embeddings from multiple files.
+   * Single delete pass + single add call for all files.
+   */
+  async batchUpsert(items: Array<{ chunks: CodeChunk[]; embeddings: Float32Array[] }>): Promise<void> {
+    if (items.length === 0) return;
+    const table = this.ensureReady();
+
+    // Collect all file paths to delete
+    const filePaths = new Set<string>();
+    const allRecords: Record<string, unknown>[] = [];
+
+    for (const { chunks, embeddings } of items) {
+      for (const chunk of chunks) filePaths.add(chunk.filePath);
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        allRecords.push({
+          id: chunk.id,
+          vector: Array.from(embeddings[i]),
+          filePath: chunk.filePath,
+          chunkName: chunk.name,
+          chunkType: chunk.type,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          content: chunk.content,
+          language: chunk.language,
+        });
+      }
+    }
+
+    // Batch delete then batch insert
+    await this.batchDeleteFiles([...filePaths]);
+    if (allRecords.length > 0) {
+      await table.add(allRecords);
+    }
+  }
+
   /** Return total number of indexed chunks. */
   async count(): Promise<number> {
     const table = this.ensureReady();

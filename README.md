@@ -14,7 +14,7 @@ A standalone MCP server that indexes source code directories and exposes retriev
 
 - Three-layer hybrid retrieval: structural (tree-sitter + PageRank), semantic (LanceDB embeddings), keyword (ripgrep)
 - Real-time file watching with incremental re-indexing
-- 7 MCP tools: `search_codebase`, `get_file_summary`, `get_repo_map`, `get_recent_changes`, `get_dependencies`, `search_symbols`, `index_status`
+- 8 MCP tools: `search_codebase`, `get_file_summary`, `get_repo_map`, `get_recent_changes`, `get_dependencies`, `get_call_graph`, `search_symbols`, `index_status`
 - Fully local — no cloud dependencies
 
 **Quick Start:**
@@ -79,6 +79,7 @@ claude mcp add --transport http codebase-index http://127.0.0.1:3847/mcp
 - `--port <num>` — HTTP port (default: 3847)
 - `--no-watch` — Disable file watching
 - `--exclude <patterns>` — Comma-separated glob patterns to exclude
+- `--pool-size <N>` — Number of embedding worker threads (default: min(4, cpu count))
 
 **Data Storage:**
 
@@ -112,12 +113,13 @@ Built-in guided exploration prompts:
 - `analyze-dependencies` — Deep dependency analysis for a file
 - `review-changes` — Review recent code changes with full context
 
-**Performance Targets:**
+**Performance:**
 
-- Initial index: 10K files in <60s
-- Incremental update: <2s
-- Query latency: <200ms
-- Memory: <500MB for 10K files
+- Streaming pipeline: Parse → Embed → Store run concurrently with backpressure
+- Worker thread embedding: ONNX inference on configurable worker pool (default: 4 threads)
+- Batch I/O: SQLite and LanceDB writes batched across files (50x fewer transactions)
+- Smart change detection: 3-tier (git diff → mtime → content hash) for near-instant incremental updates
+- Optional INT8 quantized model: `python scripts/quantize-model.py` for 2-3x faster embeddings
 
 ### 2. Prompt Enhancer Skill (`skills/prompt-enhancer/`)
 
@@ -170,7 +172,7 @@ cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhance
 │  Enhanced prompt      │ • HTTP Express (express-       │  │
 │  with codebase        │   server.ts, port 3847)        │  │
 │  context              │                                │  │
-│                       │ 7 MCP tools, 4 Resources,      │  │
+│                       │ 8 MCP tools, 4 Resources,      │  │
 │                       │ 4 Prompts for retrieval        │  │
 │                       └────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────┘
@@ -186,7 +188,7 @@ TypeScript, JavaScript (JSX/TSX), Python, Go, Rust, Java, Kotlin, Scala, C#, C/C
 | ----------------- | ------------------------------ |
 | Language (server) | TypeScript (ESM)               |
 | AST parsing       | web-tree-sitter (WASM)         |
-| Embeddings        | all-MiniLM-L6-v2 via ONNX      |
+| Embeddings        | all-MiniLM-L6-v2 via ONNX (worker threads) |
 | Vector DB         | LanceDB (embedded, file-based) |
 | Metadata          | SQLite via better-sqlite3      |
 | File watching     | @parcel/watcher                |

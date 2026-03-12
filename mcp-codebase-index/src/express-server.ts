@@ -13,8 +13,9 @@ import { randomUUID } from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createServer } from './server/mcp-server-setup.js';
+import { createDeferredServer } from './server/mcp-server-setup.js';
 import { initializeServices, resolveDataDir, parseBaseArgs } from './server/server-init.js';
+import { shutdownEmbeddingPool } from './indexer/embedding-generator.js';
 
 // ---------------------------------------------------------------------------
 // Main
@@ -26,7 +27,7 @@ async function main(): Promise<void> {
     console.error('Usage: express-server --path <directory> [--port 3847] [--no-watch] [--exclude <patterns>]');
     process.exit(1);
   }
-  const { rootPath, watch, excludePatterns } = base;
+  const { rootPath, watch, excludePatterns, poolSize } = base;
 
   // Parse HTTP-specific --port flag
   let port = 3847;
@@ -44,7 +45,10 @@ async function main(): Promise<void> {
   console.log(`[mcp-codebase-index] Data dir: ${dataDir}`);
   console.log(`[mcp-codebase-index] Watch mode: ${watch}`);
 
-  const services = await initializeServices({ rootPath, watch, excludePatterns, dataDir });
+  // Start indexing in background — HTTP server starts immediately
+  let servicesReady = false;
+  const servicesPromise = initializeServices({ rootPath, watch, excludePatterns, dataDir, poolSize })
+    .then((s) => { servicesReady = true; return s; });
 
   const app = express();
   // Restrict CORS to localhost origins (local development tool)
@@ -74,19 +78,12 @@ async function main(): Promise<void> {
       return;
     }
 
-    // New session
+    // New session — server initializes immediately, tools await indexing lazily
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
     });
 
-    const server = createServer({
-      retriever: services.retriever,
-      structural: services.structural,
-      tagGraph: services.tagGraph,
-      orchestrator: services.orchestrator,
-      metadataStore: services.metadataStore,
-      rootPath: services.rootPath,
-    });
+    const server = createDeferredServer(servicesPromise);
 
     await server.connect(transport);
 
@@ -123,13 +120,13 @@ async function main(): Promise<void> {
     res.status(200).json({ status: 'closed' });
   });
 
-  // GET /health — liveness check
+  // GET /health — liveness check with indexing status
   app.get('/health', (_req, res) => {
     res.json({
-      status: 'ok',
+      status: servicesReady ? 'ready' : 'indexing',
       sessions: sessions.size,
       uptime: process.uptime(),
-      rootPath: services.rootPath,
+      rootPath,
     });
   });
 
@@ -166,7 +163,11 @@ async function main(): Promise<void> {
       await record.transport.close();
       sessions.delete(id);
     }
-    if (services.watcher) await services.watcher.stop();
+    if (servicesReady) {
+      const services = await servicesPromise;
+      if (services.watcher) await services.watcher.stop();
+    }
+    await shutdownEmbeddingPool();
     process.exit(0);
   };
 
