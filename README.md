@@ -167,20 +167,31 @@ Supports Gemini (SDK), Ollama (local HTTP), and any OpenAI-compatible API (vLLM,
 
 **Setup as a Claude Code Skill:**
 
-1. Copy the skill into your project's `.claude/skills/` directory:
+**Option A — Install via Skills CLI (recommended):**
+
+```bash
+npx skills add ngocsangyem/context-engineer-local@prompt-enhancer
+
+# Direct path to a skill in a repo
+npx skills add https://github.com/ngocsangyem/context-engineer-local/tree/main/skills/prompt-enhancer
+```
+
+This installs the skill into `.claude/skills/prompt-enhancer/` automatically.
+
+**Option B — Manual copy:**
 
 ```bash
 cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhancer
 ```
 
-2. The skill activates automatically when Claude Code detects coding tasks. You can also invoke it explicitly:
+Once installed, the skill activates automatically when Claude Code detects coding tasks. You can also invoke it explicitly:
 
 ```
 > Use the prompt-enhancer skill to enrich my prompt: "Fix the auth timeout bug"
 > @prompt-enhancer Refactor the payment module for better separation of concerns
 ```
 
-3. The skill works immediately using the agent's built-in file tools (Read, Grep, Glob). For richer context (semantic search, dependency graphs, repo maps), optionally run the MCP codebase index server (see above). When both are available, the skill uses hybrid retrieval — combining MCP results with file-tool results for maximum coverage.
+The skill works immediately using the agent's built-in file tools (Read, Grep, Glob). For richer context (semantic search, dependency graphs, repo maps), optionally run the MCP codebase index server (see above). When both are available, the skill uses hybrid retrieval — combining MCP results with file-tool results for maximum coverage.
 
 **As a Hook (auto-enhance with `--enhancer` flag):**
 
