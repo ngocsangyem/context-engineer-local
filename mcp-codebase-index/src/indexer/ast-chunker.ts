@@ -118,6 +118,9 @@ export async function chunkFile(
       }
     }
 
+    // Extract ref tags from import statements to populate dependency graph
+    tags.push(...extractImportRefs(root, filePath));
+
     // If no named top-level chunks found, use whole file
     if (chunks.length === 0) {
       return wholeFileChunk(filePath, content, language);
@@ -128,4 +131,81 @@ export async function chunkFile(
   }
 
   return { chunks, tags };
+}
+
+/* ── Import ref extraction ─────────────────────────────────────────── */
+
+/** AST node types representing import statements across languages */
+const IMPORT_NODE_TYPES = new Set([
+  'import_statement',          // JS/TS: import { X } from './file'
+  'import_from_statement',     // Python: from module import X
+  'import_declaration',        // Go: import "pkg"
+  'use_declaration',           // Rust: use crate::module::Type
+]);
+
+/** Keywords/noise that appear as identifiers but aren't real symbol refs */
+const IMPORT_NOISE_WORDS = new Set([
+  'import', 'from', 'as', 'type', 'typeof',
+  'crate', 'self', 'super',  // Rust path segments
+]);
+
+/**
+ * Walk import statements in the AST and produce 'ref' tags for imported symbols.
+ * These ref tags feed TagGraphStore.buildFromTags() to create dependency edges.
+ */
+function extractImportRefs(root: Parser.SyntaxNode, filePath: string): SymbolTag[] {
+  const refs: SymbolTag[] = [];
+  for (const node of root.children) {
+    if (!IMPORT_NODE_TYPES.has(node.type)) continue;
+    collectIdentifiers(node, filePath, refs);
+  }
+  return refs;
+}
+
+/**
+ * Recursively walk an import node's children to find imported identifiers.
+ * Handles named imports, default imports, and namespace imports across languages.
+ */
+function collectIdentifiers(
+  node: Parser.SyntaxNode,
+  filePath: string,
+  refs: SymbolTag[]
+): void {
+  // For import_specifier nodes (e.g. `import { Foo as Bar }`), extract the
+  // *original* exported name, not the local alias. tree-sitter field 'name'
+  // points to the original; first named child is the fallback.
+  if (node.type === 'import_specifier' || node.type === 'import_spec'
+      || node.type === 'dotted_name') {
+    const nameNode = node.childForFieldName('name') ?? node.namedChildren[0];
+    const name = nameNode?.text ?? node.text;
+    if (name && !IMPORT_NOISE_WORDS.has(name)) {
+      refs.push({ name, kind: 'ref', filePath, line: node.startPosition.row + 1 });
+    }
+    return; // Don't recurse into specifier children (avoid duplicates)
+  }
+
+  // Skip namespace imports (`import * as ns`) — 'ns' is a local alias, not a symbol ref
+  if (node.type === 'namespace_import' || node.type === 'namespace_import_clause') {
+    return;
+  }
+
+  // Bare identifiers that are imported symbol names
+  if (node.type === 'identifier' || node.type === 'type_identifier') {
+    const name = node.text;
+    // Only capture identifiers that look like symbol names (not string literals, paths)
+    if (name && !IMPORT_NOISE_WORDS.has(name) && /^[A-Za-z_$]/.test(name)) {
+      refs.push({ name, kind: 'ref', filePath, line: node.startPosition.row + 1 });
+    }
+    return;
+  }
+
+  // Recurse into children (named_imports, import_clause, etc.)
+  for (const child of node.children) {
+    // Skip string literals (import paths like './file') — not symbol refs
+    if (child.type === 'string' || child.type === 'string_literal' ||
+        child.type === 'interpreted_string_literal' || child.type === 'raw_string_literal') {
+      continue;
+    }
+    collectIdentifiers(child, filePath, refs);
+  }
 }
