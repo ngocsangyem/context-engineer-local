@@ -123,7 +123,7 @@ Built-in guided exploration prompts:
 
 ### 2. Prompt Enhancer Skill (`skills/prompt-enhancer/`)
 
-A Claude Code skill that queries the MCP server to automatically enrich user prompts with relevant codebase context.
+A Claude Code skill that enriches user prompts with relevant codebase context. Works standalone using the agent's built-in file tools (Read, Grep, Glob); optionally enhanced by the MCP codebase index server for semantic search and dependency graphs.
 
 **Features:**
 
@@ -131,7 +131,10 @@ A Claude Code skill that queries the MCP server to automatically enrich user pro
 - Intensity levels (light, standard, deep) control scaffolding amount
 - Context-first prompt ordering (per Anthropic best practices)
 - Best-practice blocks: `<investigate_before_answering>`, `<grounding>`, `<anti_overengineering>`, `<use_parallel_tool_calls>`
-- Graceful degradation when MCP server is unavailable
+- **Works without MCP server** — uses built-in file tools (Read, Grep, Glob) for context discovery
+- **Hybrid retrieval** for refactor/review tasks — runs MCP + file-tools in parallel when MCP is available
+- **Quality gates** — automatically falls back to file-tools when MCP returns low-quality results
+- **Framework-aware queries** — generates optimized Grep patterns for Vue, React, Svelte, Python, Go, TypeScript
 
 **Script Usage:**
 
@@ -156,7 +159,7 @@ cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhance
 > @prompt-enhancer Refactor the payment module for better separation of concerns
 ```
 
-3. For best results, make sure the MCP codebase index server is running (see above). Without it, the skill still works but uses Claude's built-in file tools instead of the indexed context.
+3. The skill works immediately using the agent's built-in file tools (Read, Grep, Glob). For richer context (semantic search, dependency graphs, repo maps), optionally run the MCP codebase index server (see above). When both are available, the skill uses hybrid retrieval — combining MCP results with file-tool results for maximum coverage.
 
 ## Architecture
 
@@ -206,7 +209,7 @@ TypeScript, JavaScript (JSX/TSX), Python, Go, Rust, Java, Kotlin, Scala, C#, C/C
 
 ```
 context-engineer-local/
-├── mcp-codebase-index/          # MCP server
+├── mcp-codebase-index/          # MCP server (optional — skill works without it)
 │   ├── data/                    # Index data (gitignored, persists across restarts)
 │   ├── src/
 │   │   ├── index.ts             # Stdio entry point + CLI
@@ -215,7 +218,9 @@ context-engineer-local/
 │   │   │   ├── mcp-server-setup.ts
 │   │   │   ├── mcp-resource-handlers.ts
 │   │   │   ├── mcp-prompt-handlers.ts
+│   │   │   ├── mcp-result-formatters.ts
 │   │   │   └── server-init.ts   # Shared service initialization
+│   │   ├── models/              # Data models (symbol definitions)
 │   │   ├── indexer/             # File scanning, AST chunking, embeddings
 │   │   ├── storage/             # LanceDB, SQLite, tag graph
 │   │   ├── retrieval/           # Hybrid search, ranking
@@ -224,15 +229,15 @@ context-engineer-local/
 │   ├── package.json
 │   └── tsconfig.json
 ├── skills/
-│   └── prompt-enhancer/         # Claude Code skill
-│       ├── SKILL.md             # Skill definition
+│   └── prompt-enhancer/         # Claude Code skill (works standalone)
+│       ├── SKILL.md             # Skill definition — quality gates, hybrid retrieval, framework-aware queries
 │       ├── scripts/
 │       │   ├── enhance-prompt.py    # Main prompt builder
 │       │   ├── detect-intensity.py  # Intensity detection
 │       │   └── prompt-blocks.py     # XML block builders
 │       └── references/
-│           ├── context-injection-patterns.md
-│           └── task-type-strategies.md
+│           ├── context-injection-patterns.md  # MCP + file-tool result formatting
+│           └── task-type-strategies.md        # Per-task retrieval strategies, quality gates, framework hints
 ├── plans/                       # Implementation plans
 └── docs/                        # Project documentation
 ```
