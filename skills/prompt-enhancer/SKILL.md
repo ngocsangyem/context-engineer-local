@@ -24,7 +24,9 @@ when available; falls back to built-in file tools (Read, Grep, Glob) when not.
 1. **Detect task type** from user prompt (coding, debug, review, refactor, research)
 2. **Detect intensity** level (light, standard, deep) from prompt keywords and task type
 3. **Select MCP tools** based on task type (see `references/task-type-strategies.md`)
-4. **Query MCP server** using selected tools (parallel when inputs are independent)
+4. **Query context sources** based on retrieval mode:
+   - **MCP-first** (debug, coding, research): Query MCP → apply quality gates → fallback to file-tools if needed
+   - **Hybrid** (refactor, review): Query MCP + file-tools in parallel → merge results by file path
 5. **Rank and trim** results to fit token budget (default 4K tokens)
 6. **Assemble enhanced prompt** — context at top, narrative objective at bottom (action verb, deliverable, scope, success signal)
 7. **Execute** with enriched context
@@ -38,6 +40,8 @@ when available; falls back to built-in file tools (Read, Grep, Glob) when not.
 | refactor, restructure, clean | refactor | get_dependencies, get_repo_map, search_codebase |
 | review, audit, check | review | get_repo_map, get_file_summary |
 | explain, understand, how | research | get_repo_map, search_codebase |
+
+**Framework-aware queries:** When the task targets a specific file, the file extension drives query strategy for the file-tool track. Vue/React/Svelte use `<ComponentName>` + import patterns; Python/Go/TS use symbol + import patterns. See `references/task-type-strategies.md` → "Framework-Aware Query Hints".
 
 ## Intensity Levels
 
@@ -139,11 +143,31 @@ When assembling enhanced prompts with codebase-specific context:
 
 ## Graceful Degradation
 
-If MCP server is unavailable:
-- Skip MCP-specific context injection (`<codebase_context>`, `<repo_structure>`, etc.)
+### MCP Unavailable
+If MCP server cannot be reached:
+- Skip all MCP tool calls
 - Keep all behavioral blocks (investigate, grounding, anti-overengineering, verification)
 - Direct Claude to use built-in file tools (Read, Grep, Glob) for context
 - Notice: "MCP codebase index not available — using file-system tools for context"
+
+### Low-Quality Results
+If MCP tools return but results are poor, apply quality gates before injecting context:
+
+| Tool | Quality Gate | Fallback Action |
+|------|-------------|-----------------|
+| `search_codebase` | All results score <0.3, OR top result <0.5 | Re-query with literal Grep pattern instead |
+| `get_file_summary` | Returns only file path, no symbols/outline | Use Read + manual outline extraction |
+| `get_dependencies` | Both imports and imported-by are empty | Use Grep for import statements + component usage |
+| `get_repo_map` | Empty or single-entry result | Use Glob for directory listing + file structure |
+
+**Score behavior:**
+- **<0.3**: Drop individual result (noise — never inject)
+- **0.3–0.5**: Keep if at least one result scores ≥0.5 (marginal — useful as supporting context)
+- **≥0.5**: Keep (good quality)
+- If NO results score ≥0.5: tool fails quality gate → substitute with file-tool equivalent
+- If 2+ tools fail quality gates: switch entire strategy to file-tools-only mode
+- Notice: "MCP results below quality threshold for [tool] — supplementing with file-system tools"
+- Keep all behavioral blocks regardless of degradation level
 
 ## Script Usage
 

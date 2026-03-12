@@ -145,6 +145,32 @@ class TokenManager
 
 ---
 
+## 6. File-tool results (Grep/Glob fallback) → `<codebase_context>`
+
+When file-tools provide context instead of or alongside MCP (hybrid mode or quality-gate fallback), format identically to `search_codebase` results for seamless merging.
+
+**Format:**
+```xml
+<codebase_context>
+  <document index="1">
+    <source>src/views/transactions/TransactionList.vue:15</source>
+    <relevance>0.80</relevance>
+    <reason>Imports and uses AspireFilter component in template — direct consumer</reason>
+    <content>
+import AspireFilter from '@/components/common/filters/AspireFilter.vue'
+    </content>
+  </document>
+</codebase_context>
+```
+
+**Rules:**
+- File-tool results use default relevance score of 0.80 (deterministic match = high confidence)
+- `<reason>` should explain match type: "imports component", "uses in template", "passes as prop"
+- Same `<document>` structure as MCP results — no special formatting needed
+- Group by match type: imports first, template usage second, prop passing third
+
+---
+
 ## Before / After Examples
 
 ### Debug task — "Fix auth timeout bug"
