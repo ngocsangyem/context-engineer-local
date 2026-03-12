@@ -21,28 +21,30 @@ when available; falls back to built-in file tools (Read, Grep, Glob) when not.
 
 ## Workflow
 
-**IMPORTANT — External AI check (do this FIRST):**
-Before building the prompt yourself, check if an external AI provider is configured:
+**IMPORTANT — ALWAYS run the script first (do this BEFORE any manual work):**
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/prompt-enhancer/scripts/enhance-prompt.py" "<USER_PROMPT>" --provider gemini
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/prompt-enhancer/scripts/enhance-prompt.py" "<USER_PROMPT>"
 ```
 
-Run this Bash command (replace `<USER_PROMPT>` with the user's actual prompt text). The script auto-detects the provider from `.env` files. If `PROMPT_ENHANCER_PROVIDER` is set (gemini/ollama/openai), the script calls the external AI and outputs the enhanced prompt — use that output directly as your working instructions. If the script falls back to deterministic mode (no provider configured), proceed with the manual workflow below.
+Replace `<USER_PROMPT>` with the user's actual prompt text. The script outputs an XML-structured enhanced prompt with `<tool_rules>`, `<objective>`, `<verification>`, etc. **Use this output directly as your working instructions.** Do NOT rewrite or reformat it — the XML structure is critical.
 
-**Quick check:** Run `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/prompt-enhancer/scripts/enhance-prompt.py" "test" 2>&1 1>/dev/null` — if you see `[prompt-enhancer] Enhancing via ...` on stderr, external AI is active.
+If an external AI provider is configured (via `.env`), add `--provider gemini` (or `ollama`/`openai`) to let the script auto-enhance via external AI before outputting.
 
-**Manual workflow (when no external AI provider is configured):**
+**Optional overrides:**
+- `--task debug|coding|refactor|review|research` — override task detection
+- `--intensity light|standard|deep` — override intensity detection
+- `--budget 8192` — override token budget
+- `--provider gemini|ollama|openai` — use external AI enhancement
 
-1. **Detect task type** from user prompt (coding, debug, review, refactor, research)
-2. **Detect intensity** level (light, standard, deep) from prompt keywords and task type
-3. **Select MCP tools** based on task type (see `references/task-type-strategies.md`)
-4. **Query context sources** based on retrieval mode:
+**After getting the script output, enrich it with codebase context:**
+
+1. **Query context sources** based on retrieval mode:
    - **MCP-first** (debug, coding, research): Query MCP → apply quality gates → fallback to file-tools if needed
    - **Hybrid** (refactor, review): Query MCP + file-tools in parallel → merge results by file path
-5. **Rank and trim** results to fit token budget (default 4K tokens)
-6. **Assemble enhanced prompt** — context at top, narrative objective at bottom (action verb, deliverable, scope, success signal)
-7. **Execute** with enriched context
+2. **Rank and trim** results to fit token budget (default 4K tokens)
+3. **Inject context** into the script's XML structure — add specifics (file paths, line numbers, function names) into the relevant XML blocks
+4. **Execute** with enriched context
 
 ## Task-Type Detection
 

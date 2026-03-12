@@ -1,28 +1,18 @@
 #!/usr/bin/env python3
-"""
-external-ai-enhance.py — Offload prompt improvement to external AI providers.
-
-Accepts a raw prompt + deterministic enhanced prompt, sends to an external AI
-(Gemini, Ollama, or OpenAI-compatible) for refinement. Returns the original
-enhanced prompt on any failure — never breaks the enhancement pipeline.
-
-Providers: gemini (SDK), ollama (HTTP/stdlib), openai (HTTP/stdlib).
-"""
+"""Offload prompt improvement to external AI (Gemini/Ollama/OpenAI-compatible).
+Returns the original enhanced prompt on any failure — never breaks the pipeline."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from textwrap import dedent
 from urllib.request import Request, urlopen
 
-# ---------------------------------------------------------------------------
-# Import resolve_env from .claude/scripts/ — works from both locations:
-#   skills/prompt-enhancer/scripts/ (parents[3] = project root)
-#   .claude/skills/prompt-enhancer/scripts/ (parents[3] = .claude/)
-# ---------------------------------------------------------------------------
+# Import resolve_env — ancestor traversal works from skills/ and .claude/skills/
 _SCRIPT_DIR = Path(__file__).resolve().parent
 for _ancestor in _SCRIPT_DIR.parents:
     _candidate = _ancestor / "scripts" / "resolve_env.py"
@@ -35,10 +25,7 @@ except ImportError:
     def resolve_env(var: str, **_) -> str | None:  # type: ignore[assignment]
         return os.getenv(var)
 
-# ---------------------------------------------------------------------------
-# Fallback: load .env from skill directory (supports skills/ path outside .claude/)
-# resolve_env only searches .claude/skills/<skill>/.env — this covers the other location
-# ---------------------------------------------------------------------------
+# Fallback: load .env from skill dir (resolve_env only checks .claude/skills/)
 _local_env: dict[str, str] = {}
 if (_env_path := _SCRIPT_DIR.parent / ".env").exists():
     for _raw_line in _env_path.read_text().splitlines():
@@ -50,20 +37,31 @@ def resolve_env(var: str, **kw) -> str | None:  # type: ignore[no-redef]
     """Try full hierarchy first, then local .env next to skill directory."""
     return _base_resolve_env(var, **kw) or _local_env.get(var)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 _SKILL = "prompt-enhancer"
 _VALID_PROVIDERS = {"gemini", "ollama", "openai", "none"}
 _TIMEOUT = 15  # seconds — fast fail for better UX
 _MIN_RESPONSE_LEN = 100  # minimum chars for valid AI response
 
 
+def _has_required_keys(provider: str) -> bool:
+    """Check if the required API keys/config exist for the given provider."""
+    if provider == "gemini":
+        return bool(resolve_env("GEMINI_API_KEY", skill=_SKILL))
+    if provider == "openai":
+        return bool(resolve_env("OPENAI_API_KEY", skill=_SKILL))
+    if provider == "ollama":
+        return True  # Ollama is local, no API key needed
+    return False
+
+
 def _resolve_provider(override: str | None = None) -> str:
-    """Determine which provider to use from CLI override or env var."""
+    """Determine which provider to use. Returns 'none' if keys are missing."""
     provider = (override or resolve_env("PROMPT_ENHANCER_PROVIDER", skill=_SKILL) or "none").lower().strip()
     if provider not in _VALID_PROVIDERS:
-        print(f"[prompt-enhancer] Unknown provider '{provider}', falling back to deterministic mode.", file=sys.stderr)
+        print(f"[prompt-enhancer] Unknown provider '{provider}', skipping external AI.", file=sys.stderr)
+        return "none"
+    if provider != "none" and not _has_required_keys(provider):
+        print(f"[prompt-enhancer] {provider} configured but API key missing, skipping external AI.", file=sys.stderr)
         return "none"
     return provider
 
@@ -73,25 +71,24 @@ def _build_system_prompt() -> str:
     return dedent("""\
         You are a prompt engineering expert. Improve the given enhanced prompt.
 
-        Rules:
-        - Preserve ALL XML tags and structure (<tool_rules>, <objective>, <verification>, etc.)
-        - Improve specificity: add concrete details, file paths, function names where possible
+        CRITICAL FORMAT RULE:
+        The input prompt uses XML tags like <tool_rules>, <objective>, <verification>, etc.
+        Your output MUST keep EVERY XML tag exactly as-is. Do NOT strip, rename, or omit any tag.
+        The output must start with <tool_rules> and contain all original XML blocks in order.
+
+        Improvement rules:
+        - Improve specificity WITHIN each XML block: add concrete details, file paths, function names
         - Sharpen the <objective> block with better action verbs and clearer deliverables
         - Keep <done_criteria> measurable and testable
         - Do NOT add code implementations — only improve the prompt instructions
-        - Do NOT remove any existing XML blocks
         - Do NOT hallucinate file names or code that wasn't in the original
-        - Output ONLY the improved prompt — no commentary, no markdown fences""")
+        - Output ONLY the improved prompt — no commentary, no markdown fences, no explanation""")
 
 
 def _build_user_content(raw: str, enhanced: str) -> str:
     """Format the user message for the external AI."""
     return f"Raw user prompt:\n{raw}\n\nDeterministic enhanced prompt to improve:\n{enhanced}"
 
-
-# ---------------------------------------------------------------------------
-# Provider implementations
-# ---------------------------------------------------------------------------
 
 def _call_gemini(system: str, user: str) -> str:
     """Call Gemini via google-genai SDK."""
@@ -158,9 +155,17 @@ def _call_openai(system: str, user: str) -> str:
 _PROVIDERS = {"gemini": _call_gemini, "ollama": _call_ollama, "openai": _call_openai}
 
 
-def _validate_response(response: str) -> bool:
+def _validate_response(response: str, enhanced_prompt: str) -> bool:
     """Check AI response preserves XML structure and has meaningful content."""
-    return "<objective>" in response and len(response.strip()) > _MIN_RESPONSE_LEN
+    if len(response.strip()) <= _MIN_RESPONSE_LEN:
+        return False
+    original_tags = set(re.findall(r"<(\w+)>", enhanced_prompt))
+    response_tags = set(re.findall(r"<(\w+)>", response))
+    missing = original_tags - response_tags
+    if missing:
+        print(f"[prompt-enhancer] AI response missing XML tags: {missing}", file=sys.stderr)
+        return False
+    return True
 
 
 def enhance_via_external_ai(raw_prompt: str, enhanced_prompt: str, provider: str | None = None) -> str:
@@ -176,7 +181,7 @@ def enhance_via_external_ai(raw_prompt: str, enhanced_prompt: str, provider: str
         system = _build_system_prompt()
         user = _build_user_content(raw_prompt, enhanced_prompt)
         result = call_fn(system, user)
-        if _validate_response(result):
+        if _validate_response(result, enhanced_prompt):
             print(f"[prompt-enhancer] AI enhancement successful.", file=sys.stderr)
             return result
         print(f"[prompt-enhancer] AI response failed validation, using deterministic output.", file=sys.stderr)
