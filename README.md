@@ -182,6 +182,41 @@ cp -r skills/prompt-enhancer /path/to/your-project/.claude/skills/prompt-enhance
 
 3. The skill works immediately using the agent's built-in file tools (Read, Grep, Glob). For richer context (semantic search, dependency graphs, repo maps), optionally run the MCP codebase index server (see above). When both are available, the skill uses hybrid retrieval — combining MCP results with file-tool results for maximum coverage.
 
+**As a Hook (auto-enhance with `--enhancer` flag):**
+
+Instead of manually invoking the skill each time, install the hook so any prompt with `--enhancer` is automatically enhanced:
+
+1. Copy the hook script into your project:
+
+```bash
+cp skills/prompt-enhancer/hooks/prompt-enhancer-hook.cjs /path/to/your-project/.claude/hooks/
+```
+
+2. Register it in your project's `.claude/settings.json` (or `.claude/settings.local.json`):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/prompt-enhancer-hook.cjs\"",
+        "timeout": 15
+      }
+    ]
+  }
+}
+```
+
+3. Use it by appending `--enhancer` to any prompt:
+
+```
+Fix the auth timeout bug --enhancer
+Refactor the payment module --enhancer
+```
+
+The hook runs `enhance-prompt.py`, then Claude shows you the enhanced prompt and asks whether to use it as-is, let you modify it, or skip enhancement.
+
 ## Architecture
 
 ```
