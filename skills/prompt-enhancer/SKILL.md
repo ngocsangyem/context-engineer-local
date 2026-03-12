@@ -33,17 +33,23 @@ python3 "SKILL_DIR/scripts/enhance-prompt.py" "USER_PROMPT_HERE"
 
 Where `SKILL_DIR` is the absolute path to the directory containing this SKILL.md.
 
-The script outputs an XML-structured enhanced prompt. **Use this output directly as your working instructions.** Do NOT rewrite or reformat it.
+The script outputs an XML-structured enhanced prompt with tags like `<tool_rules>`, `<objective>`, `<work_style>`, `<verification>`, `<done_criteria>`, etc.
+
+**CRITICAL:** The script output IS your working instructions. Follow these rules:
+- **DO NOT** rewrite, reformat, or restructure the XML output
+- **DO NOT** strip XML tags or merge XML blocks
+- **USE** the XML output as-is to guide your task execution
+- The XML tags define your workflow — `<tool_rules>` tells you what tools to use, `<objective>` tells you what to do, `<done_criteria>` tells you when you're done
 
 **Optional flags:** `--task TYPE`, `--intensity LEVEL`, `--budget N`, `--provider gemini|ollama|openai`
 
 > **External AI is automatic:** If `PROMPT_ENHANCER_PROVIDER` is set in `.env` (e.g., `gemini`, `ollama`, `openai`), the script automatically sends the prompt to that provider for improvement — no `--provider` flag needed. When the MCP codebase-index HTTP server is also running, it enriches the external AI call with real codebase context. No configuration needed beyond the `.env` file.
 
-**Step 2 — Enrich with codebase context:**
-1. Query MCP tools based on task type (see tables below)
+**Step 2 — Execute with codebase context:**
+1. Follow the `<tool_rules>` block to query MCP tools for relevant context
 2. Apply quality gates — fallback to file-tools if MCP results are poor
-3. Inject specifics (file paths, line numbers) into the XML blocks
-4. Execute with enriched context
+3. Use the gathered context to execute the task described in `<objective>`
+4. Validate your work against `<done_criteria>` and `<verification>` blocks
 
 ## Task-Type Detection
 
