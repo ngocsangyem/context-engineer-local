@@ -40,11 +40,13 @@ export interface SearchResult {
 
 export interface SearchOptions {
   query: string;
-  strategy?: 'hybrid' | 'semantic' | 'keyword' | 'structural';
+  strategy?: 'hybrid' | 'semantic' | 'keyword' | 'structural' | 'symbol';
   /** Maximum results to return. Default: 10 */
   limit?: number;
   /** Glob pattern to filter by file path e.g. "*.ts" */
   filePattern?: string;
+  /** If true, expand top results with call-graph context within a token budget */
+  expand?: boolean;
 }
 
 export interface RepoMapEntry {

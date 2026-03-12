@@ -41,18 +41,22 @@ export function createServer(deps: ServerDependencies): McpServer {
   // Tool 1: search_codebase
   server.tool(
     'search_codebase',
-    'Hybrid semantic + keyword + structural search across the indexed codebase.',
+    'Hybrid semantic + keyword + structural + symbol search across the indexed codebase.',
     {
       query: z.string().describe('Search query'),
       strategy: z
-        .enum(['hybrid', 'semantic', 'keyword', 'structural'])
+        .enum(['hybrid', 'semantic', 'keyword', 'structural', 'symbol'])
         .default('hybrid')
-        .describe('Search strategy'),
+        .describe('Search strategy: "symbol" for exact/prefix symbol name lookup'),
       limit: z.number().int().min(1).max(50).default(10).describe('Max results'),
       file_pattern: z.string().optional().describe('Glob pattern to filter files (e.g. "*.ts")'),
+      expand: z
+        .boolean()
+        .default(false)
+        .describe('If true, expand top results with call-graph context (callers/callees)'),
     },
-    async ({ query, strategy, limit, file_pattern }) => {
-      const opts: SearchOptions = { query, strategy, limit, filePattern: file_pattern };
+    async ({ query, strategy, limit, file_pattern, expand }) => {
+      const opts: SearchOptions = { query, strategy, limit, filePattern: file_pattern, expand };
       const results = await retriever.search(opts);
       return { content: [{ type: 'text', text: formatSearchResults(results) }] };
     }

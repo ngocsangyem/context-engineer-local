@@ -131,7 +131,8 @@ async function main(): Promise<void> {
 
   const semantic = new SemanticSearch(vectorStore);
   const structural = new StructuralSearch(tagGraph, rootPath);
-  const retriever = new HybridRetriever(semantic, structural, rootPath);
+  const metadataStore = orchestrator.getMetadataStore();
+  const retriever = new HybridRetriever(semantic, structural, rootPath, metadataStore);
 
   // Populate structural search symbol cache from the built tag graph definition names
   const rankedFiles = tagGraph.getRankedFiles(10000);
@@ -150,7 +151,6 @@ async function main(): Promise<void> {
   }
 
   // 6. Create and connect MCP server
-  const metadataStore = orchestrator.getMetadataStore();
   const server = createServer({ retriever, structural, tagGraph, orchestrator, metadataStore, rootPath });
   const transport = new StdioServerTransport();
   await server.connect(transport);
