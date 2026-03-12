@@ -8,7 +8,8 @@ import path from 'path';
 import type { IndexerOrchestrator } from '../indexer/indexer-orchestrator.js';
 import type { GitignoreFilter } from '../utils/gitignore-filter.js';
 
-const DEBOUNCE_MS = 300;
+/** Larger debounce window to batch consecutive file-system events more effectively. */
+const DEBOUNCE_MS = 500;
 
 type WatcherSubscription = { unsubscribe(): Promise<void> };
 
@@ -89,6 +90,7 @@ export class FileWatcherService {
 
     if (changed.length === 0 && deleted.length === 0) return;
 
+    const start = Date.now();
     try {
       if (changed.length > 0) {
         await this.orchestrator.indexFiles(changed);
@@ -96,8 +98,9 @@ export class FileWatcherService {
       if (deleted.length > 0) {
         await this.orchestrator.removeFiles(deleted);
       }
+      const elapsed = Date.now() - start;
       process.stderr.write(
-        `[watcher] Re-indexed ${changed.length} files, removed ${deleted.length} files\n`
+        `[watcher] Re-indexed ${changed.length} files, removed ${deleted.length} files (${elapsed}ms)\n`
       );
     } catch (err) {
       process.stderr.write(`[watcher] Flush error: ${err}\n`);

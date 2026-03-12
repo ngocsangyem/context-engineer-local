@@ -3,6 +3,7 @@
  * scan → hash-check → AST-chunk → embed → store vectors → build graph → store metadata.
  *
  * Supports full re-index, incremental update, and file removal.
+ * Uses parallel file processing with a concurrency limit for faster indexing.
  */
 
 import fs from 'fs';
@@ -34,6 +35,28 @@ export interface IndexStats {
   graphEdges: number;
   /** Timestamp (ms epoch) of the most recently indexed file, or null if empty */
   newestIndexed: number | null;
+}
+
+/** Concurrency limit for parallel file processing (conservative — better-sqlite3 is sync). */
+const INDEXING_CONCURRENCY = 4;
+
+/**
+ * Run async tasks over items with a bounded concurrency limit.
+ * Pure JS single-threaded: push() is atomic, no mutex needed.
+ */
+async function runWithConcurrency<T>(
+  items: T[],
+  fn: (item: T) => Promise<void>,
+  concurrency: number
+): Promise<void> {
+  let i = 0;
+  const next = async (): Promise<void> => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => next()));
 }
 
 export class IndexerOrchestrator {
@@ -93,26 +116,32 @@ export class IndexerOrchestrator {
       await this.removeFiles(staleFiles);
     }
 
-    // Index new/changed files
+    // Index new/changed files in parallel with bounded concurrency
     const allTags: SymbolTag[] = [];
     let indexedCount = 0;
     let skippedCount = 0;
     let totalChunks = 0;
 
-    for (const file of scannedFiles) {
-      const result = await processFile(file, this.vectorStore, this.metadataStore);
-      if (result === null) {
-        skippedCount++;
-        continue;
-      }
-      allTags.push(...result.tags);
-      totalChunks += result.chunkCount;
-      indexedCount++;
+    this.log(`Processing files with concurrency=${INDEXING_CONCURRENCY}...`);
+    await runWithConcurrency(
+      scannedFiles,
+      async (file) => {
+        const result = await processFile(file, this.vectorStore, this.metadataStore);
+        if (result === null) {
+          skippedCount++;
+          return;
+        }
+        // JS array push is safe in single-threaded async context
+        allTags.push(...result.tags);
+        totalChunks += result.chunkCount;
+        indexedCount++;
 
-      if (indexedCount % 50 === 0) {
-        this.log(`  Indexed ${indexedCount}/${scannedFiles.length} files...`);
-      }
-    }
+        if (indexedCount % 50 === 0) {
+          this.log(`  Indexed ${indexedCount}/${scannedFiles.length} files...`);
+        }
+      },
+      INDEXING_CONCURRENCY
+    );
 
     // Rebuild tag graph from all collected tags, then overlay persisted import edges
     this.log('Building dependency graph...');

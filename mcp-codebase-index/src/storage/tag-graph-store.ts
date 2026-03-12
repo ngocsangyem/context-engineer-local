@@ -21,10 +21,12 @@ export class TagGraphStore {
   private outEdges: Map<string, Set<string>> = new Map();
   /** Incoming edges: file → set of files that depend on it */
   private inEdges: Map<string, Set<string>> = new Map();
-  /** Last computed PageRank scores */
+  /** Last computed PageRank scores (lazily computed when dirty) */
   private pageRankScores: Map<string, number> = new Map();
   /** Definition symbol names per file, populated during buildFromTags */
   private fileDefs: Map<string, string[]> = new Map();
+  /** True when graph has changed and PageRank needs recomputation */
+  private dirty = false;
 
   private ensureNode(file: string): void {
     if (!this.outEdges.has(file)) this.outEdges.set(file, new Set());
@@ -72,7 +74,8 @@ export class TagGraphStore {
       this.inEdges.get(defFile)!.add(tag.filePath);
     }
 
-    this.computePageRank();
+    // Mark dirty — PageRank computed lazily on next getRankedFiles() call
+    this.markDirty();
   }
 
   /**
@@ -98,7 +101,8 @@ export class TagGraphStore {
       this.inEdges.get(defFile)!.add(tag.filePath);
     }
 
-    this.computePageRank();
+    // Mark dirty — PageRank computed lazily on next getRankedFiles() call
+    this.markDirty();
   }
 
   /**
@@ -125,8 +129,17 @@ export class TagGraphStore {
   }
 
   /**
+   * Mark the graph as dirty so PageRank will be recomputed on next getRankedFiles() call.
+   * Prefer this over calling computePageRank() directly to avoid redundant work.
+   */
+  markDirty(): void {
+    this.dirty = true;
+  }
+
+  /**
    * Iterative PageRank with damping factor.
    * Score represents the "importance" of a file in the codebase graph.
+   * Called lazily from getRankedFiles() when dirty flag is set.
    */
   private computePageRank(): void {
     const nodes = [...this.outEdges.keys()];
@@ -157,9 +170,14 @@ export class TagGraphStore {
 
   /**
    * Return files sorted by PageRank score descending.
+   * Lazily recomputes PageRank if the graph has been modified since last computation.
    * @param topN Maximum number of results (default 20)
    */
   getRankedFiles(topN = DEFAULT_TOP_N): Array<{ filePath: string; score: number }> {
+    if (this.dirty) {
+      this.computePageRank();
+      this.dirty = false;
+    }
     return [...this.pageRankScores.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, topN)
@@ -207,7 +225,8 @@ export class TagGraphStore {
       this.inEdges.get(edge.toFile)!.add(edge.fromFile);
     }
 
-    this.computePageRank();
+    // Mark dirty — PageRank computed lazily on next getRankedFiles() call
+    this.markDirty();
   }
 
   getStats(): GraphStats {
