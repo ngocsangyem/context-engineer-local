@@ -9,6 +9,14 @@ import path from 'path';
 import fs from 'fs';
 import type { SymbolRecord } from '../models/symbol.js';
 
+export interface CallEdge {
+  callerFile: string;
+  callerSymbol: string;
+  callerLine: number;
+  calleeName: string;
+  calleeFile: string | null;
+}
+
 export interface DependencyEdge {
   fromFile: string;
   toFile: string;
@@ -84,6 +92,17 @@ export class MetadataStore {
       );
       CREATE INDEX IF NOT EXISTS idx_dep_from ON dependency_edges(from_file);
       CREATE INDEX IF NOT EXISTS idx_dep_to ON dependency_edges(to_file);
+
+      CREATE TABLE IF NOT EXISTS call_edges (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        caller_file  TEXT NOT NULL,
+        caller_symbol TEXT NOT NULL,
+        caller_line  INTEGER NOT NULL,
+        callee_name  TEXT NOT NULL,
+        callee_file  TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_call_caller ON call_edges(caller_file);
+      CREATE INDEX IF NOT EXISTS idx_call_callee ON call_edges(callee_name);
     `);
   }
 
@@ -298,6 +317,54 @@ export class MetadataStore {
     return rows.map(rowToEdge);
   }
 
+  /* ── Call edge methods ─────────────────────────────────────────────── */
+
+  /** Replace all call edges for a given caller file (atomic delete + insert). */
+  upsertCallEdges(callerFile: string, edges: Omit<CallEdge, 'calleeFile'>[]): void {
+    const del = this.db.prepare('DELETE FROM call_edges WHERE caller_file = ?');
+    const ins = this.db.prepare(
+      `INSERT INTO call_edges (caller_file, caller_symbol, caller_line, callee_name, callee_file)
+       VALUES (?, ?, ?, ?, NULL)`
+    );
+    const tx = this.db.transaction(() => {
+      del.run(callerFile);
+      for (const e of edges) {
+        ins.run(callerFile, e.callerSymbol, e.callerLine, e.calleeName);
+      }
+    });
+    tx();
+  }
+
+  /** Remove all call edges where caller_file matches. Called on file deletion. */
+  removeCallEdges(filePath: string): void {
+    this.db.prepare('DELETE FROM call_edges WHERE caller_file = ?').run(filePath);
+  }
+
+  /** What functions call symbolName? (reverse lookup) */
+  getCallers(symbolName: string, limit = 50): CallEdge[] {
+    const rows = this.db
+      .prepare<[string, number], Record<string, unknown>>(
+        'SELECT * FROM call_edges WHERE callee_name = ? ORDER BY caller_file, caller_line LIMIT ?'
+      )
+      .all(symbolName, limit);
+    return rows.map(rowToCallEdge);
+  }
+
+  /** What functions does callerSymbol call? (forward lookup) */
+  getCallees(callerFile: string, callerSymbol?: string, limit = 50): CallEdge[] {
+    let sql: string;
+    let params: (string | number)[];
+    if (callerSymbol) {
+      sql = 'SELECT * FROM call_edges WHERE caller_file = ? AND caller_symbol = ? ORDER BY caller_line LIMIT ?';
+      params = [callerFile, callerSymbol, limit];
+    } else {
+      sql = 'SELECT * FROM call_edges WHERE caller_file = ? ORDER BY caller_symbol, caller_line LIMIT ?';
+      params = [callerFile, limit];
+    }
+    const rows = this.db.prepare<(string | number)[], Record<string, unknown>>(sql).all(...params);
+    return rows.map(rowToCallEdge);
+  }
+
   /** Close the database connection. */
   close(): void {
     this.db.close();
@@ -312,6 +379,17 @@ function rowToEdge(row: Record<string, unknown>): DependencyEdge {
     kind: row.kind as string,
     symbols: row.symbols ? JSON.parse(row.symbols as string) : [],
     fromLine: row.from_line as number,
+  };
+}
+
+/** Map a SQLite row to a CallEdge. */
+function rowToCallEdge(row: Record<string, unknown>): CallEdge {
+  return {
+    callerFile: row.caller_file as string,
+    callerSymbol: row.caller_symbol as string,
+    callerLine: row.caller_line as number,
+    calleeName: row.callee_name as string,
+    calleeFile: (row.callee_file as string) ?? null,
   };
 }
 

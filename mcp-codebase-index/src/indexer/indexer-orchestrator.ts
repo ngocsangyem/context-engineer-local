@@ -174,6 +174,7 @@ export class IndexerOrchestrator {
       this.tagGraph.removeFile(fp);
       this.metadataStore.removeSymbols(fp);
       this.metadataStore.removeEdges(fp);
+      this.metadataStore.removeCallEdges(fp);
     }
     this.metadataStore.removeFiles(filePaths);
   }

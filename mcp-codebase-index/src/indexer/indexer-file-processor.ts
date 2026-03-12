@@ -10,6 +10,7 @@ import { generateEmbeddings } from './embedding-generator.js';
 import { hashContent, hasContentChanged } from './content-hasher.js';
 import { parseImports } from './import-parser.js';
 import { resolveImports } from './import-resolver.js';
+import { extractCallEdges } from './call-graph-builder.js';
 import type { LanceVectorStore } from '../storage/lance-vector-store.js';
 import type { MetadataStore } from '../storage/metadata-store.js';
 import type { ScannedFile } from './file-scanner.js';
@@ -96,6 +97,14 @@ export async function processFile(
       metadataStore.upsertEdges(file.path, edges);
     } catch (err) {
       process.stderr.write(`Warning: import parsing failed for ${file.path}: ${err}\n`);
+    }
+
+    // Extract call edges (unresolved — records caller→callee name without file resolution)
+    try {
+      const callEdges = extractCallEdges(result.rootNode, file.path, symbols);
+      metadataStore.upsertCallEdges(file.path, callEdges);
+    } catch (err) {
+      process.stderr.write(`Warning: call graph extraction failed for ${file.path}: ${err}\n`);
     }
   }
 

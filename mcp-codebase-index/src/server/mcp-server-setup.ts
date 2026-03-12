@@ -215,6 +215,68 @@ export function createServer(deps: ServerDependencies): McpServer {
     }
   );
 
+  // Tool 8: get_call_graph
+  server.tool(
+    'get_call_graph',
+    'Get the call graph for a symbol — who calls it (callers) or what it calls (callees). Uses unresolved call tracking for fast, lightweight results.',
+    {
+      symbol: z.string().describe('Symbol name to query (e.g. "processFile", "AuthService.login")'),
+      direction: z
+        .enum(['callers', 'callees'])
+        .default('callers')
+        .describe('"callers" = who calls this symbol; "callees" = what this symbol calls'),
+      file: z.string().optional().describe('Scope callees query to a specific file path'),
+      limit: z.number().int().min(1).max(100).default(30).describe('Max results'),
+    },
+    async ({ symbol, direction, file, limit }) => {
+      try {
+        const lines: string[] = [];
+
+        if (direction === 'callers') {
+          const callers = metadataStore.getCallers(symbol, limit);
+          if (callers.length === 0) {
+            return { content: [{ type: 'text', text: `No recorded callers for "${symbol}".` }] };
+          }
+          lines.push(`Callers of "${symbol}" (${callers.length} found):`);
+          lines.push('');
+          for (const e of callers) {
+            lines.push(`  ${e.callerSymbol}`);
+            lines.push(`    in: ${e.callerFile}:${e.callerLine}`);
+          }
+        } else {
+          // callees
+          const targetFile = file ?? '';
+          if (!targetFile) {
+            return {
+              content: [{
+                type: 'text',
+                text: 'For direction="callees", provide a "file" parameter to scope the query.',
+              }],
+            };
+          }
+          const callees = metadataStore.getCallees(targetFile, symbol, limit);
+          if (callees.length === 0) {
+            return {
+              content: [{
+                type: 'text',
+                text: `No recorded callees for "${symbol}" in ${targetFile}.`,
+              }],
+            };
+          }
+          lines.push(`Callees of "${symbol}" in ${targetFile} (${callees.length} found):`);
+          lines.push('');
+          for (const e of callees) {
+            lines.push(`  -> ${e.calleeName}  (line ${e.callerLine})`);
+          }
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error querying call graph: ${err}` }] };
+      }
+    }
+  );
+
   // Tool 7: search_symbols
   server.tool(
     'search_symbols',
