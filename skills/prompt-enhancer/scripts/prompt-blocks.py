@@ -80,9 +80,10 @@ _DIAGNOSIS_TEMPLATES: dict[str, str] = {
     "refactor": (
         "Before extracting or restructuring, diagnose:\n"
         "- Map all responsibilities in the target file.\n"
+        "- Identify natural boundaries between concerns (e.g., UI orchestration, "
+        "state bridging, data fetching, action handlers).\n"
         "- Identify duplicated patterns and DRY violation candidates.\n"
         "- Assess which boundaries are natural extraction points vs artificial splits.\n"
-        "- Distinguish cohesive blocks from mixed concerns.\n"
         "Document your diagnosis before proposing changes."
     ),
     "review": (
@@ -198,8 +199,9 @@ _DELIVERABLE_SUFFIXES: dict[str, str] = {
 }
 
 _VERIFY_FROM_SOURCE = (
-    "Verify all observations (line counts, consumer counts, etc.) against the "
-    "actual codebase before acting — use ~approximate numbers until confirmed."
+    "Verify all observations against the actual codebase before acting: "
+    "line counts (wc -l), consumer counts (grep/import scan), "
+    "props/emits (read source). Use ~approximate numbers until confirmed."
 )
 
 

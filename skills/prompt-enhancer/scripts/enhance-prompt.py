@@ -134,7 +134,6 @@ def enhance(raw_prompt: str, task: str | None, budget: int, intensity: str | Non
     sections: list[str] = []
 
     # --- TOP: Context directives (longform data at top per best practices) ---
-    sections.append(f"<context_budget>\n{_build_budget(detected_task, budget)}\nTrim lower-relevance results first when over budget.\n</context_budget>")
     sections.append(f"<tool_rules>\n{_build_tool_rules(detected_task, normalized, detected_intensity)}\n</tool_rules>")
 
     if has_parallel and is_standard_plus:

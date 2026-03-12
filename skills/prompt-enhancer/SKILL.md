@@ -51,17 +51,16 @@ when available; falls back to built-in file tools (Read, Grep, Glob) when not.
 
 Enhanced prompts follow Anthropic's recommendation — longform context at top, query at bottom:
 
-1. `<context_budget>` — token allocation for MCP results
-2. `<tool_rules>` — which MCP tools to call and how
-3. `<use_parallel_tool_calls>` — parallel execution (standard+, 2+ tools)
-4. `<investigate_before_answering>` — prevent hallucination (standard+)
-5. `<diagnosis>` — analyze before acting: map responsibilities, find patterns (standard+)
-6. `<anti_overengineering>` — YAGNI/KISS (coding/refactor, standard+)
-7. `<work_style>` — task-type specific approach
-8. `<grounding>` — quote code before reasoning (standard+)
-9. `<verification>` — imperative self-check at meaningful checkpoints (standard+)
-10. `<objective>` — narrative restatement with deliverable and success signal (BOTTOM)
-11. `<done_criteria>` — when to stop
+1. `<tool_rules>` — which MCP tools to call and how
+2. `<use_parallel_tool_calls>` — parallel execution (standard+, 2+ tools)
+3. `<investigate_before_answering>` — prevent hallucination (standard+)
+4. `<diagnosis>` — analyze before acting: map responsibilities, find patterns (standard+)
+5. `<anti_overengineering>` — YAGNI/KISS (coding/refactor, standard+)
+6. `<work_style>` — task-type specific approach
+7. `<grounding>` — quote code before reasoning (standard+)
+8. `<verification>` — imperative self-check at meaningful checkpoints (standard+)
+9. `<objective>` — narrative restatement with deliverable and success signal (BOTTOM)
+10. `<done_criteria>` — when to stop
 
 ## Narrative Objective Format
 
@@ -127,9 +126,10 @@ When assembling enhanced prompts with codebase-specific context:
 - "If full verification isn't possible, document assumptions explicitly"
 
 ### File Size Targets: Flexible, Not Rigid
-- Use "target under 200 lines where reasonable"
+- Use "target ~200 lines for the script portion where reasonable" (excluding template/styles)
 - Add: "avoid splitting cohesive logic solely to satisfy the line limit"
 - A 220-line cohesive composable is better than 2 artificially split files
+- For Vue SFCs: count template, script, style separately — a 180-line template + 150-line script is fine
 
 ## Token Budget
 
