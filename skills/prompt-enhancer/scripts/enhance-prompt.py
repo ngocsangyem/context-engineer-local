@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-enhance-prompt.py — Prompt enhancement with optional external AI refinement.
-
-Builds structured prompts (context-first, query-last) per Anthropic best practices.
-Optionally refines via external AI (Gemini/Ollama/OpenAI) when --provider is set.
-"""
+"""Prompt enhancement with MCP server check and optional external AI refinement."""
 
 from __future__ import annotations
 
@@ -41,10 +36,6 @@ build_parallel_tools_block = _blocks_mod.build_parallel_tools_block
 build_verification = _blocks_mod.build_verification
 build_narrative_objective = _blocks_mod.build_narrative_objective
 build_diagnosis_block = _blocks_mod.build_diagnosis_block
-
-# ---------------------------------------------------------------------------
-# Task type detection and constants
-# ---------------------------------------------------------------------------
 
 TASK_KEYWORDS: dict[str, list[str]] = {
     "debug":    ["fix", "bug", "error", "crash", "fail", "broken", "exception", "traceback", "issue"],
@@ -176,10 +167,6 @@ _DONE_CRITERIA = {
 def _done_criteria(task: str) -> str:
     return _DONE_CRITERIA.get(task, _DONE_CRITERIA["research"])
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Enhance a raw prompt with MCP codebase context directives.")

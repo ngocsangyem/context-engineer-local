@@ -21,30 +21,27 @@ when available; falls back to built-in file tools (Read, Grep, Glob) when not.
 
 ## Workflow
 
-**IMPORTANT — ALWAYS run the script first (do this BEFORE any manual work):**
+**Step 0 — Check Indexing MCP availability (do this FIRST):**
+Before running anything, check if MCP codebase-index tools are available to you (e.g., `search_codebase`, `get_file_summary`). If NO MCP tools are available, **skip this skill entirely** — proceed with the user's task using built-in file tools (Read, Grep, Glob) directly.
+
+**Step 1 — Run the enhancement script:**
+Find `enhance-prompt.py` in this skill's `scripts/` directory and run it:
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/prompt-enhancer/scripts/enhance-prompt.py" "<USER_PROMPT>"
+python3 "SKILL_DIR/scripts/enhance-prompt.py" "USER_PROMPT_HERE"
 ```
 
-Replace `<USER_PROMPT>` with the user's actual prompt text. The script outputs an XML-structured enhanced prompt with `<tool_rules>`, `<objective>`, `<verification>`, etc. **Use this output directly as your working instructions.** Do NOT rewrite or reformat it — the XML structure is critical.
+Where `SKILL_DIR` is the absolute path to the directory containing this SKILL.md.
 
-If an external AI provider is configured (via `.env`), add `--provider gemini` (or `ollama`/`openai`) to let the script auto-enhance via external AI before outputting.
+The script outputs an XML-structured enhanced prompt. **Use this output directly as your working instructions.** Do NOT rewrite or reformat it.
 
-**Optional overrides:**
-- `--task debug|coding|refactor|review|research` — override task detection
-- `--intensity light|standard|deep` — override intensity detection
-- `--budget 8192` — override token budget
-- `--provider gemini|ollama|openai` — use external AI enhancement
+**Optional flags:** `--task TYPE`, `--intensity LEVEL`, `--budget N`, `--provider gemini|ollama|openai`
 
-**After getting the script output, enrich it with codebase context:**
-
-1. **Query context sources** based on retrieval mode:
-   - **MCP-first** (debug, coding, research): Query MCP → apply quality gates → fallback to file-tools if needed
-   - **Hybrid** (refactor, review): Query MCP + file-tools in parallel → merge results by file path
-2. **Rank and trim** results to fit token budget (default 4K tokens)
-3. **Inject context** into the script's XML structure — add specifics (file paths, line numbers, function names) into the relevant XML blocks
-4. **Execute** with enriched context
+**Step 2 — Enrich with codebase context:**
+1. Query MCP tools based on task type (see tables below)
+2. Apply quality gates — fallback to file-tools if MCP results are poor
+3. Inject specifics (file paths, line numbers) into the XML blocks
+4. Execute with enriched context
 
 ## Task-Type Detection
 
