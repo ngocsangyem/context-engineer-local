@@ -199,6 +199,16 @@ def _validate_response(response: str, enhanced_prompt: str) -> bool:
     return True
 
 
+_MODEL_DEFAULTS = {"gemini": "gemini-2.5-flash", "ollama": "llama3.2", "openai": "gpt-4o-mini"}
+_MODEL_ENV_KEYS = {"gemini": "GEMINI_MODEL", "ollama": "OLLAMA_MODEL", "openai": "OPENAI_MODEL"}
+
+
+def _resolve_model_name(provider: str) -> str:
+    """Get the model name for logging."""
+    env_key = _MODEL_ENV_KEYS.get(provider, "")
+    return resolve_env(env_key, skill=_SKILL) or _MODEL_DEFAULTS.get(provider, "unknown") if env_key else "unknown"
+
+
 def enhance_via_external_ai(raw_prompt: str, enhanced_prompt: str, provider: str | None = None) -> str:
     """Send enhanced prompt to external AI for improvement. Returns original on any failure."""
     resolved = _resolve_provider(provider)
@@ -207,7 +217,8 @@ def enhance_via_external_ai(raw_prompt: str, enhanced_prompt: str, provider: str
     call_fn = _PROVIDERS.get(resolved)
     if not call_fn:
         return enhanced_prompt
-    print(f"[prompt-enhancer] Enhancing via {resolved}...", file=sys.stderr)
+    model_name = _resolve_model_name(resolved)
+    print(f"[prompt-enhancer] Enhancing via {resolved} (model: {model_name})...", file=sys.stderr)
     try:
         mcp_context = _query_mcp_context(raw_prompt)
         if mcp_context:
