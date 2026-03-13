@@ -18,10 +18,10 @@ def build_investigate_block() -> str:
     """Block that prevents hallucination about unread code. Standard+ intensity."""
     return (
         "<investigate_before_answering>\n"
-        "Never speculate about code you have not opened. If the user references a\n"
-        "specific file, read the file before answering. Investigate relevant files\n"
-        "BEFORE answering questions about the codebase. Give grounded,\n"
-        "hallucination-free answers.\n"
+        "Investigate relevant files BEFORE answering questions about the codebase.\n"
+        "Read every file the user references before responding about it.\n"
+        "Give grounded, hallucination-free answers based on actual code.\n"
+        "Never speculate about code you have not opened.\n"
         "Match investigation scope to verification scope — if you plan to verify N\n"
         "consumers, investigate a representative sample of those same consumers.\n"
         "</investigate_before_answering>"
@@ -48,6 +48,9 @@ def build_anti_overengineering_block() -> str:
         "Do not add abstractions, interfaces, or layers unless they solve a concrete\n"
         "current problem. Do not hard-code values just to pass tests — implement\n"
         "general solutions.\n"
+        "Search for existing helpers before creating new ones — reuse over reinvent.\n"
+        "A fix that only patches one callsite while others remain broken is not a fix.\n"
+        "Minimal scope: only change what the task requires. No drive-by cleanups.\n"
         "</anti_overengineering>"
     )
 
@@ -56,9 +59,36 @@ def build_parallel_tools_block() -> str:
     """Block enabling parallel MCP tool calls. Included when 2+ independent tools."""
     return (
         "<use_parallel_tool_calls>\n"
-        "When multiple MCP tools need to be called and their inputs are independent,\n"
-        "call them in parallel rather than sequentially for faster context retrieval.\n"
+        "When multiple tool calls are needed:\n"
+        "1. Think first — decide ALL files and tools you need before any call.\n"
+        "2. Batch independent calls — if inputs don't depend on each other, call in parallel.\n"
+        "3. Analyze results — understand patterns before acting.\n"
+        "4. Repeat — if results reveal new questions, batch the next round.\n"
+        "Only sequence calls when one result determines the next call's parameters.\n"
         "</use_parallel_tool_calls>"
+    )
+
+
+def build_default_to_action_block() -> str:
+    """Bias-to-action block. Standard+ intensity."""
+    return (
+        "<default_to_action>\n"
+        "Default to taking action rather than asking for permission or clarification.\n"
+        "If the task is clear enough to make reasonable progress, start working.\n"
+        "Only ask a clarifying question when the ambiguity would lead to wasted work\n"
+        "or an irreversible mistake.\n"
+        "</default_to_action>"
+    )
+
+
+def build_concise_responses_block() -> str:
+    """Skip preambles and unnecessary commentary. All intensities."""
+    return (
+        "<concise_responses>\n"
+        "Skip preambles, acknowledgment phrases, and trailing summaries.\n"
+        "Do not start with 'Great question!', 'Sure!', or 'I'd be happy to help.'\n"
+        "Lead with the answer or action. Use commentary only when it adds value.\n"
+        "</concise_responses>"
     )
 
 
@@ -261,9 +291,10 @@ def build_verification(task: str) -> str:
     numbered = "\n".join(f"  {i}. {c}" for i, c in enumerate(task_checks, 1))
     n = len(task_checks) + 1
     return (
-        f"At meaningful checkpoints (not after every micro-change), verify:\n"
+        f"Before you finish, verify your work against these criteria:\n"
         f"{numbered}\n"
         f"  {n}. Your answer is grounded in actual code, not assumptions.\n"
         f"  {n+1}. No existing functionality is broken by your changes.\n"
+        f"Also check at meaningful checkpoints during work, not just at the end.\n"
         f"If full verification isn't possible, document assumptions explicitly."
     )

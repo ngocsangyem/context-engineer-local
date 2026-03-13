@@ -36,6 +36,8 @@ build_parallel_tools_block = _blocks_mod.build_parallel_tools_block
 build_verification = _blocks_mod.build_verification
 build_narrative_objective = _blocks_mod.build_narrative_objective
 build_diagnosis_block = _blocks_mod.build_diagnosis_block
+build_default_to_action_block = _blocks_mod.build_default_to_action_block
+build_concise_responses_block = _blocks_mod.build_concise_responses_block
 
 TASK_KEYWORDS: dict[str, list[str]] = {
     "debug":    ["fix", "bug", "error", "crash", "fail", "broken", "exception", "traceback", "issue"],
@@ -46,17 +48,17 @@ TASK_KEYWORDS: dict[str, list[str]] = {
 }
 
 TASK_MCP_TOOLS: dict[str, list[str]] = {
-    "debug":    ["search_codebase", "get_recent_changes", "get_file_summary"],
-    "coding":   ["search_codebase", "get_dependencies"],
-    "refactor": ["get_dependencies", "get_repo_map", "search_codebase"],
+    "debug":    ["search_codebase", "get_recent_changes", "get_file_summary", "get_call_graph"],
+    "coding":   ["search_codebase", "get_dependencies", "search_symbols"],
+    "refactor": ["get_dependencies", "get_repo_map", "search_codebase", "get_call_graph"],
     "review":   ["get_repo_map", "get_file_summary"],
     "research": ["get_repo_map", "search_codebase"],
 }
 
 BUDGET_WEIGHTS: dict[str, dict[str, float]] = {
-    "debug":    {"search_codebase": 0.50, "get_recent_changes": 0.30, "get_file_summary": 0.20},
-    "coding":   {"search_codebase": 0.70, "get_dependencies": 0.30},
-    "refactor": {"get_dependencies": 0.40, "get_repo_map": 0.30, "search_codebase": 0.30},
+    "debug":    {"search_codebase": 0.40, "get_recent_changes": 0.25, "get_file_summary": 0.20, "get_call_graph": 0.15},
+    "coding":   {"search_codebase": 0.55, "get_dependencies": 0.25, "search_symbols": 0.20},
+    "refactor": {"get_dependencies": 0.30, "get_repo_map": 0.25, "search_codebase": 0.25, "get_call_graph": 0.20},
     "review":   {"get_repo_map": 0.60, "get_file_summary": 0.40},
     "research": {"get_repo_map": 0.50, "search_codebase": 0.50},
 }
@@ -86,13 +88,6 @@ def detect_task(prompt: str) -> str:
     return best if score > 0 else "research"
 
 
-def _build_budget(task: str, budget: int) -> str:
-    weights = BUDGET_WEIGHTS[task]
-    lines = [f"Total context budget: {budget} tokens", "Allocation:"]
-    for tool, w in weights.items():
-        lines.append(f"  - {tool}: {int(budget * w)} tokens ({int(w * 100)}%)")
-    return "\n".join(lines)
-
 
 def _build_tool_rules(task: str, prompt: str, intensity: str) -> str:
     tools = TASK_MCP_TOOLS[task]
@@ -104,6 +99,8 @@ def _build_tool_rules(task: str, prompt: str, intensity: str) -> str:
     if len(tools) > 1:
         lines.append(f"Secondary tools: {', '.join(tools[1:])}")
     lines.append(f"Context focus: {CONTEXT_FOCUS[task]}")
+    if task in ("debug", "refactor"):
+        lines.append('When using search_codebase, set expand=true to include call-graph context for top results.')
     lines.append("If MCP server is unavailable: use built-in file tools (Read, Grep, Glob) for context instead.")
     return "\n".join(lines)
 
@@ -128,6 +125,9 @@ def enhance(raw_prompt: str, task: str | None, budget: int, intensity: str | Non
     if has_parallel and is_standard_plus:
         sections.append(build_parallel_tools_block())
 
+    if is_standard_plus:
+        sections.append(build_default_to_action_block())
+
     # --- MIDDLE: Behavioral blocks (conditional on intensity) ---
     if is_standard_plus:
         sections.append(build_investigate_block())
@@ -149,6 +149,7 @@ def enhance(raw_prompt: str, task: str | None, budget: int, intensity: str | Non
         sections.append(f"<verification>\n{build_verification(detected_task)}\n</verification>")
 
     # --- BOTTOM: Objective/query last (up to 30% quality improvement) ---
+    sections.append(build_concise_responses_block())
     sections.append(f"<objective>\n{build_narrative_objective(detected_task, normalized)}\n</objective>")
     sections.append(f"<done_criteria>\n{_done_criteria(detected_task)}\nStop only when the response satisfies the task and passes verification.\n</done_criteria>")
 

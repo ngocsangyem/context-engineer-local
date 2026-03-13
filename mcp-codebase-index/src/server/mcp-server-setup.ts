@@ -59,7 +59,11 @@ export function createServer(deps: ServerDependencies, deferredDeps?: Promise<Se
   // Tool 1: search_codebase
   server.tool(
     'search_codebase',
-    'Hybrid semantic + keyword + structural + symbol search across the indexed codebase.',
+    'Hybrid semantic + keyword + structural + symbol search across the indexed codebase. ' +
+    'Strategy guide: "hybrid" (default) combines all signals — best for natural language queries. ' +
+    '"symbol" for exact function/class name lookup. "keyword" for literal string matching. ' +
+    '"semantic" for concept-based similarity. "structural" for AST-aware code pattern search. ' +
+    'Score ranges: >=0.7 strong match, 0.5-0.7 relevant, 0.3-0.5 marginal, <0.3 noise.',
     {
       query: z.string().describe('Search query'),
       strategy: z
@@ -71,7 +75,7 @@ export function createServer(deps: ServerDependencies, deferredDeps?: Promise<Se
       expand: z
         .boolean()
         .default(false)
-        .describe('If true, expand top results with call-graph context (callers/callees)'),
+        .describe('If true, expand top 3 results with call-graph context — callers and callees of the primary symbol in each result'),
     },
     async ({ query, strategy, limit, file_pattern, expand }) => {
       const { retriever } = await getDeps();
@@ -128,11 +132,30 @@ export function createServer(deps: ServerDependencies, deferredDeps?: Promise<Se
         const log = logResult.status === 'fulfilled' ? logResult.value.stdout.trim() : 'git log failed';
         const diff = diffResult.status === 'fulfilled' ? diffResult.value.stdout.trim() : '';
 
-        const text = [
-          `Recent commits (since ${since}, max ${limit}):`,
-          log || '  (no commits found)',
-          diff ? `\nChanged files (last ${Math.min(limit, 10)} commits):\n${diff}` : '',
-        ].join('\n');
+        const lines: string[] = [];
+        lines.push(`Recent commits (since ${since}, max ${limit}):`);
+        lines.push('');
+
+        if (log) {
+          lines.push('| Hash | Message |');
+          lines.push('|------|---------|');
+          for (const line of log.split('\n').filter(Boolean)) {
+            const spaceIdx = line.indexOf(' ');
+            const hash = spaceIdx > 0 ? line.slice(0, spaceIdx) : line;
+            const message = spaceIdx > 0 ? line.slice(spaceIdx + 1) : '';
+            lines.push(`| ${hash} | ${message} |`);
+          }
+        } else {
+          lines.push('(no commits found)');
+        }
+
+        if (diff) {
+          lines.push('');
+          lines.push(`Changed files (last ${Math.min(limit, 10)} commits):`);
+          lines.push(diff);
+        }
+
+        const text = lines.join('\n');
 
         return { content: [{ type: 'text', text }] };
       } catch (err) {
@@ -274,14 +297,32 @@ export function createServer(deps: ServerDependencies, deferredDeps?: Promise<Se
           }
         } else {
           // callees
-          const targetFile = file ?? '';
+          let targetFile = file ?? '';
           if (!targetFile) {
-            return {
-              content: [{
-                type: 'text',
-                text: 'For direction="callees", provide a "file" parameter to scope the query.',
-              }],
-            };
+            // Attempt to resolve file from symbol index
+            const matches = metadataStore.searchSymbols(symbol, undefined, 10);
+            const exactMatches = matches.filter(
+              s => s.name === symbol || s.qualifiedName === symbol
+            );
+            if (exactMatches.length === 0) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `No symbol "${symbol}" found in the index. Provide a "file" parameter to scope the query.`,
+                }],
+              };
+            }
+            if (exactMatches.length > 1) {
+              const candidates = exactMatches.map(s => `  ${s.filePath}:${s.startLine}`).join('\n');
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Symbol "${symbol}" is ambiguous — found in ${exactMatches.length} files:\n${candidates}\nProvide a "file" parameter to disambiguate.`,
+                }],
+              };
+            }
+            // Exactly one match — use its file
+            targetFile = exactMatches[0].filePath;
           }
           const callees = metadataStore.getCallees(targetFile, symbol, limit);
           if (callees.length === 0) {

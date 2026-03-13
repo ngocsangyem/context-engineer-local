@@ -85,6 +85,11 @@ def _build_system_prompt() -> str:
         - Do NOT hallucinate file names or code that wasn't in the original
         - If codebase context is provided, use REAL file paths and function names from it
         - Prefer codebase context over generic improvements — ground the prompt in actual code
+        - Order context before the query: longform data and tool results go at top, the user's actual question goes at bottom
+        - Bias toward action: prefer "do X" over "consider doing X" — be direct and imperative
+        - Avoid excessive caveats: one caveat per block is enough. Don't hedge every statement
+        - Keep blocks focused: each XML block should have ONE clear purpose
+        - Preserve block order: tool_rules first, objective near bottom, done_criteria last
         - Output ONLY the improved prompt — no commentary, no markdown fences, no explanation""")
 
 

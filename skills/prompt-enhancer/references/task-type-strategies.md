@@ -6,9 +6,9 @@ Retrieval strategy per task type: which MCP tools to call, in what order, how to
 
 | Task Type | Retrieval Mode | Primary Tool | Secondary Tools | Default Intensity | Parallel Tools | Context Focus |
 |-----------|---------------|-------------|-----------------|-------------------|----------------|---------------|
-| debug | MCP-first | search_codebase | get_recent_changes, get_file_summary | standard | search + recent_changes in parallel, then file_summary | Error-related code, recent diffs |
-| coding | MCP-first | search_codebase | get_dependencies | standard | search + deps in parallel | Related patterns, import graph |
-| refactor | **Hybrid** | get_dependencies | get_repo_map, search_codebase | standard | MCP + file-tools in parallel | Full dependency graph, affected files |
+| debug | MCP-first | search_codebase | get_recent_changes, get_file_summary, get_call_graph | standard | search + recent_changes in parallel, then file_summary, then call_graph | Error-related code, recent diffs |
+| coding | MCP-first | search_codebase | get_dependencies, search_symbols | standard | search + deps + symbols in parallel | Related patterns, import graph |
+| refactor | **Hybrid** | get_dependencies | get_repo_map, search_codebase, get_call_graph | standard | MCP + file-tools in parallel | Full dependency graph, affected files |
 | review | **Hybrid** | get_repo_map | get_file_summary | standard | MCP + file-tools in parallel | Architecture overview, file outlines |
 | research | MCP-first | get_repo_map | search_codebase | light | map + search in parallel | Codebase conventions, patterns |
 
@@ -25,11 +25,13 @@ Retrieval strategy per task type: which MCP tools to call, in what order, how to
 **Tool sequence:**
 1. `search_codebase(query)` + `get_recent_changes(files)` — run in parallel
 2. `get_file_summary(filePath)` — after identifying the target file from step 1
+3. `get_call_graph(symbol, direction="callers")` — trace error propagation
 
 **Token budget split (4096 default):**
-- 2048 tokens → search_codebase (top 3-5 snippets)
-- 1229 tokens → get_recent_changes (last 5-10 relevant commits)
-- 819 tokens → get_file_summary (function/class outline)
+- 1638 tokens → search_codebase (40%)
+- 1024 tokens → get_recent_changes (25%)
+- 819 tokens → get_file_summary (20%)
+- 615 tokens → get_call_graph (15%)
 
 **Intensity behavior:**
 - Light: search_codebase only, skip recent_changes and summary
@@ -43,12 +45,12 @@ Retrieval strategy per task type: which MCP tools to call, in what order, how to
 **Goal:** Understand existing patterns and import graph before writing new code.
 
 **Tool sequence:**
-1. `search_codebase(query)` + `get_dependencies(filePath)` — run in parallel
+1. `search_codebase(query)` + `get_dependencies(filePath)` + `search_symbols(query)` — run in parallel
 
 **Token budget split (4096 default):**
-- 2458 tokens → search_codebase (top 4-6 snippets)
-- 1229 tokens → get_dependencies (direct imports + importers)
-- 409 tokens → get_repo_map (summary of affected area)
+- 2253 tokens → search_codebase (55%)
+- 1024 tokens → get_dependencies (25%)
+- 819 tokens → search_symbols (20%)
 
 **Intensity behavior:**
 - Light: search_codebase only
@@ -62,16 +64,17 @@ Retrieval strategy per task type: which MCP tools to call, in what order, how to
 **Goal:** Map all callers and dependents before restructuring to avoid breaking changes.
 
 **Hybrid tool sequence (parallel tracks):**
-1. **MCP track:** `get_dependencies(filePath)` + `get_repo_map(directory)` + `search_codebase(query)` — all in parallel
+1. **MCP track:** `get_dependencies(filePath)` + `get_repo_map(directory)` + `search_codebase(query)` + `get_call_graph(symbol)` — all in parallel
 2. **File-tool track:** `Grep(pattern="{SymbolName}", glob="*.{ext}")` — deterministic consumer search
 3. **Merge:** Dedupe by file path. MCP results with score ≥0.5 take priority. File-tool results fill gaps.
 
 **Why hybrid:** Missing a consumer during refactor causes runtime breakage. File-tools provide deterministic recall (find ALL matches); MCP provides semantic ranking (find RELEVANT matches). Together: complete + ranked.
 
 **Token budget split (4096 default):**
-- 1638 tokens → get_dependencies / file-tool consumer list (merged)
-- 1229 tokens → get_repo_map (directory-level overview)
-- 1229 tokens → search_codebase / file-tool usage examples (merged)
+- 1229 tokens → get_dependencies (30%)
+- 1024 tokens → get_repo_map (25%)
+- 1024 tokens → search_codebase (25%)
+- 819 tokens → get_call_graph (20%)
 
 **Intensity behavior:**
 - Light: get_dependencies only (MCP-first, no hybrid)

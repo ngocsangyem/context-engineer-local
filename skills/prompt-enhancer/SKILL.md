@@ -55,9 +55,9 @@ The script outputs an XML-structured enhanced prompt with tags like `<tool_rules
 
 | Keywords | Task Type | Primary MCP Tools |
 |----------|-----------|-------------------|
-| fix, bug, error, crash, fail | debug | search_codebase, get_recent_changes, get_file_summary |
-| implement, add, create, build | coding | search_codebase, get_dependencies |
-| refactor, restructure, clean | refactor | get_dependencies, get_repo_map, search_codebase |
+| fix, bug, error, crash, fail | debug | search_codebase, get_recent_changes, get_file_summary, get_call_graph |
+| implement, add, create, build | coding | search_codebase, get_dependencies, search_symbols |
+| refactor, restructure, clean | refactor | get_dependencies, get_repo_map, search_codebase, get_call_graph |
 | review, audit, check | review | get_repo_map, get_file_summary |
 | explain, understand, how | research | get_repo_map, search_codebase |
 
@@ -67,8 +67,8 @@ The script outputs an XML-structured enhanced prompt with tags like `<tool_rules
 
 | Level | Triggers | Blocks Included |
 |-------|----------|-----------------|
-| **light** | "quick", "simple", "trivial", "rename", "typo" | tool_rules, work_style, objective, done_criteria |
-| **standard** | Default for most tasks | All light blocks + investigate, diagnosis, grounding, verification, parallel_tools, anti_overengineering (coding/refactor) |
+| **light** | "quick", "simple", "trivial", "rename", "typo" | tool_rules, work_style, concise_responses, objective, done_criteria |
+| **standard** | Default for most tasks | All light blocks + investigate, diagnosis, grounding, verification, parallel_tools, default_to_action, anti_overengineering (coding/refactor) |
 | **deep** | "careful", "thorough", "critical", "production", "security" | All standard blocks with stronger verification |
 
 ## Prompt Ordering (Best Practices)
@@ -77,14 +77,16 @@ Enhanced prompts follow Anthropic's recommendation — longform context at top, 
 
 1. `<tool_rules>` — which MCP tools to call and how
 2. `<use_parallel_tool_calls>` — parallel execution (standard+, 2+ tools)
-3. `<investigate_before_answering>` — prevent hallucination (standard+)
-4. `<diagnosis>` — analyze before acting: map responsibilities, find patterns (standard+)
-5. `<anti_overengineering>` — YAGNI/KISS (coding/refactor, standard+)
-6. `<work_style>` — task-type specific approach
-7. `<grounding>` — quote code before reasoning (standard+)
-8. `<verification>` — imperative self-check at meaningful checkpoints (standard+)
-9. `<objective>` — narrative restatement with deliverable and success signal (BOTTOM)
-10. `<done_criteria>` — when to stop
+3. `<default_to_action>` — bias to action (standard+)
+4. `<investigate_before_answering>` — prevent hallucination (standard+)
+5. `<diagnosis>` — analyze before acting: map responsibilities, find patterns (standard+)
+6. `<anti_overengineering>` — YAGNI/KISS (coding/refactor, standard+)
+7. `<work_style>` — task-type specific approach
+8. `<grounding>` — quote code before reasoning (standard+)
+9. `<verification>` — imperative self-check at meaningful checkpoints (standard+)
+10. `<concise_responses>` — skip preambles (all intensities)
+11. `<objective>` — narrative restatement with deliverable and success signal (BOTTOM)
+12. `<done_criteria>` — when to stop
 
 ## Narrative Objective Format
 

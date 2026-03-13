@@ -8,7 +8,10 @@ import type { SearchResult, RepoMapEntry } from '../retrieval/semantic-search.js
 /** Format an array of search results as numbered, readable text. */
 export function formatSearchResults(results: SearchResult[]): string {
   if (results.length === 0) return 'No results found.';
-  return results
+  const topScore = Math.max(...results.map(r => r.score));
+  const sources = [...new Set(results.map(r => r.source))];
+  const meta = `Results: ${results.length} found | top score: ${topScore.toFixed(2)} | sources: ${sources.join(', ')}`;
+  const formatted = results
     .map((r, i) => {
       const header =
         `[${i + 1}] ${r.filePath} (lines ${r.startLine}-${r.endLine}, ` +
@@ -17,6 +20,7 @@ export function formatSearchResults(results: SearchResult[]): string {
       return `${header}\n    ${snippet}`;
     })
     .join('\n\n');
+  return `${meta}\n\n${formatted}`;
 }
 
 /** Format an array of repo-map entries as ranked file list with symbols. */
@@ -26,7 +30,8 @@ export function formatRepoMap(entries: RepoMapEntry[]): string {
     .map((e) => {
       const syms = e.symbols.length > 0 ? `\n  symbols: ${e.symbols.join(', ')}` : '';
       const deps = e.dependencies.length > 0 ? `\n  imports: ${e.dependencies.join(', ')}` : '';
-      return `${e.filePath} (rank: ${e.rank.toFixed(4)})${syms}${deps}`;
+      const depBy = e.dependents.length > 0 ? `\n  imported by: ${e.dependents.join(', ')}` : '';
+      return `${e.filePath} (rank: ${e.rank.toFixed(4)})${syms}${deps}${depBy}`;
     })
     .join('\n');
 }
